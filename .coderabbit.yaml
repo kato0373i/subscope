@@ -1,0 +1,58 @@
+# CodeRabbit 設定
+# https://docs.coderabbit.ai/guides/configure-coderabbit
+language: "ja"
+
+# レビューの口調・方針（日本語で具体的に指示できる）
+tone_instructions: "簡潔かつ具体的に。指摘には理由と修正案を添える。重箱の隅より設計・正しさを優先する。"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "staging"
+
+  # レビュー対象から除外するパス（ロックファイル等のノイズを減らす）
+  path_filters:
+    - "!**/go.sum"
+    - "!**/*.lock"
+
+  # パスごとにドメイン文脈を与え、的外れな指摘を減らす
+  path_instructions:
+    - path: "backend/internal/**/internal/domain/**"
+      instructions: >-
+        ドメイン層。shared と標準ライブラリ以外への依存があれば指摘すること。
+        集約の不変条件・状態遷移の正しさ、金額（int64・円）の端数処理や
+        オーバーフローに注意してレビューすること。
+    - path: "backend/internal/**"
+      instructions: >-
+        厳格なモジュラーモノリス。モジュール間は型付きIDとドメインイベントのみで
+        会話する設計。他モジュールの内部パッケージへの直接依存や、請求（Invoice）が
+        決済手段を参照するような不適切な結合があれば必ず指摘すること。
+
+  # 外部リンター/スキャナの結果をレビューに統合する
+  tools:
+    golangci-lint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+# レビューで得た知見を学習し、以降のレビュー精度を上げる
+knowledge_base:
+  learnings:
+    scope: "auto"

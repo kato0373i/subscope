@@ -1,0 +1,22 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - depguard
+    - gofmt
+    - govet
+
+linters-settings:
+  depguard:
+    rules:
+      # ドメイン層の純粋性を強制する。
+      # internal/<module>/internal/domain は標準ライブラリと shared 以外に依存してはならない。
+      # （他モジュールの公開パッケージや platform=インフラへの依存を禁止）
+      domain-purity:
+        list-mode: strict
+        files:
+          - "**/internal/*/internal/domain/*.go"
+        allow:
+          - "$gostd"
+          - "github.com/kato0373i/subscope/backend/internal/shared"

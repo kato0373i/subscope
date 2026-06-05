@@ -18,7 +18,12 @@ func (m Money) Add(other Money) (Money, error) {
 	if m.Currency != other.Currency {
 		return Money{}, fmt.Errorf("通貨が異なるため加算できません: %s + %s", m.Currency, other.Currency)
 	}
-	return Money{Amount: m.Amount + other.Amount, Currency: m.Currency}, nil
+	sum := m.Amount + other.Amount
+	// int64 の桁あふれを検出し、壊れた金額を返さない。
+	if (other.Amount > 0 && sum < m.Amount) || (other.Amount < 0 && sum > m.Amount) {
+		return Money{}, fmt.Errorf("金額がオーバーフローしました: %d + %d", m.Amount, other.Amount)
+	}
+	return Money{Amount: sum, Currency: m.Currency}, nil
 }
 
 // IsZero は金額がゼロかを返す。

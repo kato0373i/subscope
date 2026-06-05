@@ -1,6 +1,9 @@
 package shared
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestMoney_Add_SameCurrency(t *testing.T) {
 	got, err := JPY(1000).Add(JPY(500))
@@ -16,6 +19,18 @@ func TestMoney_Add_CurrencyMismatch(t *testing.T) {
 	usd := Money{Amount: 100, Currency: "USD"}
 	if _, err := JPY(1000).Add(usd); err == nil {
 		t.Error("通貨不一致でエラーになるべき")
+	}
+}
+
+func TestMoney_Add_Overflow(t *testing.T) {
+	max := Money{Amount: math.MaxInt64, Currency: "JPY"}
+	if _, err := max.Add(JPY(1)); err == nil {
+		t.Error("正方向のオーバーフローでエラーになるべき")
+	}
+
+	min := Money{Amount: math.MinInt64, Currency: "JPY"}
+	if _, err := min.Add(JPY(-1)); err == nil {
+		t.Error("負方向のオーバーフローでエラーになるべき")
 	}
 }
 

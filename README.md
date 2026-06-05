@@ -31,6 +31,7 @@ subscope/
 │       ├── collection/       # 回収（回収戦略）
 │       ├── payment/          # 決済実行（PaymentTransaction）
 │       ├── settlement/       # 入金・消込
+│       ├── tax/              # 税（インボイス制度対応の税計算）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）
 └── frontend/                 # React アプリ（予定）

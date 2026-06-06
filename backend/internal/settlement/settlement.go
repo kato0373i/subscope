@@ -15,11 +15,17 @@ import (
 type Service struct {
 	bus         shared.EventBus
 	settlements map[shared.SettlementID]*domain.Settlement
-	seq         int
+	// seen は消込済みの入金トランザクション。PSP の二重通知による二重消込を防ぐ。
+	seen map[shared.TransactionID]bool
+	seq  int
 }
 
 func NewService(bus shared.EventBus) *Service {
-	s := &Service{bus: bus, settlements: make(map[shared.SettlementID]*domain.Settlement)}
+	s := &Service{
+		bus:         bus,
+		settlements: make(map[shared.SettlementID]*domain.Settlement),
+		seen:        make(map[shared.TransactionID]bool),
+	}
 	// クレカは決済成功＝即入金。口座振替/振込は本来ここに「銀行データ取込」経路が加わる。
 	bus.Subscribe(events.NamePaymentSucceeded, s.onPaymentSucceeded)
 	return s
@@ -27,8 +33,20 @@ func NewService(bus shared.EventBus) *Service {
 
 func (s *Service) onPaymentSucceeded(ctx context.Context, e shared.Event) error {
 	ev := e.(events.PaymentSucceeded)
+
+	// 冪等性：同一の入金（PSP の二重通知）は一度だけ消し込む。TransactionID を自然キーにする。
+	if s.seen[ev.TransactionID] {
+		log.Printf("[settlement] 重複入金通知を無視 txn=%s（冪等）", ev.TransactionID)
+		return nil
+	}
+	s.seen[ev.TransactionID] = true
+
 	s.seq++
 	st := domain.New(shared.SettlementID(fmt.Sprintf("STL-%04d", s.seq)), ev.InvoiceID, ev.Amount)
+	// 入金額の全額を債権へ充当する（過消込はドメインが弾く）。
+	if err := st.Reconcile(ev.Amount); err != nil {
+		return err
+	}
 	s.settlements[st.ID] = st
 	log.Printf("[settlement] 入金を消し込み settlement=%s invoice=%s amount=%s", st.ID, ev.InvoiceID, st.Amount)
 	return s.bus.Publish(ctx, events.InvoicePaid{InvoiceID: ev.InvoiceID})

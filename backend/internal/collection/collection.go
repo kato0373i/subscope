@@ -41,7 +41,14 @@ func (s *Service) onInvoiceIssued(ctx context.Context, e shared.Event) error {
 		InvoiceID:       ev.InvoiceID,
 		PaymentMethodID: method,
 		Amount:          ev.Amount,
+		IdempotencyKey:  chargeKey(ev.InvoiceID, c.Attempt()),
 	})
+}
+
+// chargeKey は課金試行ごとに安定した冪等キーを返す。
+// 同一試行の ChargeRequested が再送されても payment が二重決済しないようにする。
+func chargeKey(inv shared.InvoiceID, attempt int) shared.IdempotencyKey {
+	return shared.IdempotencyKey(fmt.Sprintf("charge:%s:%d", inv, attempt))
 }
 
 func (s *Service) onPaymentFailed(ctx context.Context, e shared.Event) error {
@@ -66,6 +73,7 @@ func (s *Service) onPaymentFailed(ctx context.Context, e shared.Event) error {
 		InvoiceID:       c.Invoice,
 		PaymentMethodID: method,
 		Amount:          c.Amount,
+		IdempotencyKey:  chargeKey(c.Invoice, c.Attempt()),
 	})
 }
 

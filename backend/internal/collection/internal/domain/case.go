@@ -57,4 +57,7 @@ func (c *Case) NextMethod() (shared.PaymentMethodID, bool) {
 
 func (c *Case) RecordFailure() { c.attempt++ }
 
+// Attempt は現在の試行番号（0 始まり）。冪等キーの生成に使う。
+func (c *Case) Attempt() int { return c.attempt }
+
 func (c *Case) MarkRecovered() { c.Status = StatusRecovered }

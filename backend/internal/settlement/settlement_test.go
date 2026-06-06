@@ -37,3 +37,29 @@ func TestService_PaymentSucceededSettlesInvoice(t *testing.T) {
 		t.Errorf("InvoiceID = %q, want INV-1", got.InvoiceID)
 	}
 }
+
+// 同一の入金（同じ TransactionID）が二重通知されても、消込は一度だけ・InvoicePaid も一度だけ。
+func TestService_SettlementIsIdempotent(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	_ = settlement.NewService(bus)
+
+	var paid int
+	bus.Subscribe(events.NameInvoicePaid, func(context.Context, shared.Event) error { paid++; return nil })
+
+	succeeded := events.PaymentSucceeded{
+		InvoiceID:     "INV-1",
+		TransactionID: "TXN-1",
+		Amount:        shared.JPY(3000),
+	}
+	// PSP の二重通知を模擬。
+	if err := bus.Publish(context.Background(), succeeded); err != nil {
+		t.Fatalf("Publish#1: %v", err)
+	}
+	if err := bus.Publish(context.Background(), succeeded); err != nil {
+		t.Fatalf("Publish#2: %v", err)
+	}
+
+	if paid != 1 {
+		t.Errorf("InvoicePaid = %d, want 1（二重消込を抑止）", paid)
+	}
+}

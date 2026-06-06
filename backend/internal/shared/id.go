@@ -14,3 +14,7 @@ type (
 	CollectionCaseID string
 	SettlementID     string
 )
+
+// IdempotencyKey は冪等性キー。PSP の Webhook 二重通知やイベント再送に備え、
+// 同一の論理操作（課金・入金消込）を一度だけ処理するために使う。
+type IdempotencyKey string

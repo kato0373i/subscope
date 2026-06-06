@@ -15,17 +15,33 @@ import (
 type Service struct {
 	bus shared.EventBus
 	txs map[shared.TransactionID]*domain.Transaction
-	seq int
+	// seen は処理済みの課金要求キー。PSP の二重通知・イベント再送による二重決済を防ぐ。
+	seen map[shared.IdempotencyKey]bool
+	seq  int
 }
 
 func NewService(bus shared.EventBus) *Service {
-	s := &Service{bus: bus, txs: make(map[shared.TransactionID]*domain.Transaction)}
+	s := &Service{
+		bus:  bus,
+		txs:  make(map[shared.TransactionID]*domain.Transaction),
+		seen: make(map[shared.IdempotencyKey]bool),
+	}
 	bus.Subscribe(events.NameChargeRequested, s.onChargeRequested)
 	return s
 }
 
 func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 	ev := e.(events.ChargeRequested)
+
+	// 冪等性：同一の課金要求（再送）は二重に決済しない。
+	if ev.IdempotencyKey != "" {
+		if s.seen[ev.IdempotencyKey] {
+			log.Printf("[payment]    重複課金要求を無視 key=%s（冪等）", ev.IdempotencyKey)
+			return nil
+		}
+		s.seen[ev.IdempotencyKey] = true
+	}
+
 	s.seq++
 	tx := domain.NewTransaction(
 		shared.TransactionID(fmt.Sprintf("TXN-%04d", s.seq)),

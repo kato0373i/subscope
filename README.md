@@ -28,7 +28,7 @@ subscope/
 │   └── internal/
 │       ├── contract/         # 契約
 │       ├── billing/          # 請求（Invoice = 債権）
-│       ├── collection/       # 回収（回収戦略）
+│       ├── collection/       # 回収（リトライ/手段切替・貸倒・エスカレーション戦略）
 │       ├── payment/          # 決済実行（PaymentTransaction・PSP ACL・pending）
 │       ├── settlement/       # 入金・消込
 │       ├── tax/              # 税（インボイス制度対応の税計算）

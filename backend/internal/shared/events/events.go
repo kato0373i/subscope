@@ -9,6 +9,8 @@ const (
 	NameInvoiceIssued                    = "billing.InvoiceIssued"
 	NameChargeRequested                  = "collection.ChargeRequested"
 	NameCollectionEscalated              = "collection.CollectionEscalated"
+	NameCollectionRecovered              = "collection.CollectionRecovered"
+	NameCollectionWrittenOff             = "collection.CollectionWrittenOff"
 	NamePaymentSucceeded                 = "payment.PaymentSucceeded"
 	NamePaymentPending                   = "payment.PaymentPending"
 	NamePaymentFailed                    = "payment.PaymentFailed"
@@ -83,13 +85,37 @@ func (PaymentFailed) EventName() string { return NamePaymentFailed }
 
 // CollectionEscalated は全決済手段が尽きた回収案件のエスカレーション。collection が発行する。
 // 受信側（督促・解約モジュール等）はこのイベントを機に次アクションを実行する。
+// PlannedActions は戦略が定めたエスカレーション手順（例: notify→suspend→request_cancel）。
+// 受信側はこの順に督促・利用停止・解約申請を進める。collection 自身は実行しない。
 type CollectionEscalated struct {
+	CaseID         shared.CollectionCaseID
+	InvoiceID      shared.InvoiceID
+	Amount         shared.Money
+	PlannedActions []string
+}
+
+func (CollectionEscalated) EventName() string { return NameCollectionEscalated }
+
+// CollectionRecovered は未収案件が入金消込により回収完了したこと。collection が発行する。
+// metrics（回収率の集計）や督促の取り下げトリガーとして使う。
+type CollectionRecovered struct {
 	CaseID    shared.CollectionCaseID
 	InvoiceID shared.InvoiceID
 	Amount    shared.Money
 }
 
-func (CollectionEscalated) EventName() string { return NameCollectionEscalated }
+func (CollectionRecovered) EventName() string { return NameCollectionRecovered }
+
+// CollectionWrittenOff は回収を諦め債権を貸倒として落としたこと。collection が発行する。
+// 少額債権を延々追わないための「諦めライン」を超えた案件で発火する。
+type CollectionWrittenOff struct {
+	CaseID    shared.CollectionCaseID
+	InvoiceID shared.InvoiceID
+	Amount    shared.Money
+	Reason    string
+}
+
+func (CollectionWrittenOff) EventName() string { return NameCollectionWrittenOff }
 
 // InvoicePaid は入金の消込完了。settlement が発行する。
 type InvoicePaid struct {

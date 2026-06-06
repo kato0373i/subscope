@@ -19,7 +19,8 @@ const (
 type DecisionKind int
 
 const (
-	DecisionRetry    DecisionKind = iota // 次の手段で再試行
+	DecisionNoOp     DecisionKind = iota // 何もしない（終了済み案件への遅延/重複通知など）
+	DecisionRetry                        // 次の手段で再試行
 	DecisionEscalate                     // 手段が尽きた → 督促・解約へエスカレーション
 	DecisionWriteOff                     // 手段が尽きた → 貸倒（少額債権など）
 )
@@ -71,10 +72,10 @@ func (c *Case) CurrentMethod() (shared.PaymentMethodID, bool) {
 }
 
 // RecordFailure は 1 回の課金失敗を記録し、次の一手を決める。
-// 既に終了状態（recovered/escalated/written_off）なら何もせず Escalate(理由=closed) を返す。
+// 既に終了状態（recovered/escalated/written_off）なら NoOp を返し、督促等の再起動を防ぐ。
 func (c *Case) RecordFailure() Decision {
 	if c.Status != StatusInProgress {
-		return Decision{Kind: DecisionEscalate, Reason: "case_already_closed"}
+		return Decision{Kind: DecisionNoOp, Reason: "case_already_closed"}
 	}
 	c.attempt++
 	return c.decide()

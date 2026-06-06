@@ -44,15 +44,8 @@ func TestService_ExhaustingMethodsEscalates(t *testing.T) {
 	// 起票（1 手段目を要求）。
 	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
 
-	// 戦略は 4 手段。失敗を繰り返すと最後にエスカレーションする。
-	for i := 0; i < 4; i++ {
-		mustPublish(t, bus, events.PaymentFailed{
-			InvoiceID:       "INV-1",
-			TransactionID:   "TXN",
-			PaymentMethodID: "PM",
-			Reason:          "insufficient_funds",
-		})
-	}
+	// 戦略は 4 手段。各手段の失敗を順に通知すると最後にエスカレーションする。
+	failAllMethods(t, bus, "INV-1")
 
 	if charges != 4 {
 		t.Errorf("ChargeRequested = %d, want 4（4 手段すべて試行）", charges)
@@ -75,9 +68,7 @@ func TestService_EscalationCarriesPlannedActions(t *testing.T) {
 	})
 
 	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
-	for i := 0; i < 4; i++ {
-		mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", Reason: "insufficient_funds"})
-	}
+	failAllMethods(t, bus, "INV-1")
 
 	if esc == nil {
 		t.Fatal("CollectionEscalated が発行されなかった")
@@ -130,19 +121,71 @@ func TestService_WriteOffStrategyEmitsWrittenOff(t *testing.T) {
 
 	// 少額の請求先：1 手段失敗で貸倒。
 	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-minor", BillingAccountID: "BA-minor", Amount: shared.JPY(500)})
-	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-minor", Reason: "insufficient_funds"})
+	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-minor", PaymentMethodID: "PM-card-primary", Reason: "insufficient_funds"})
 
 	// 既定の請求先：4 手段失敗でエスカレーション（貸倒にならない）。
 	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-std", BillingAccountID: "BA-std", Amount: shared.JPY(3000)})
-	for i := 0; i < 4; i++ {
-		mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-std", Reason: "insufficient_funds"})
-	}
+	failAllMethods(t, bus, "INV-std")
 
 	if writtenOff != 1 {
 		t.Errorf("CollectionWrittenOff = %d, want 1", writtenOff)
 	}
 	if escalated != 1 {
 		t.Errorf("CollectionEscalated = %d, want 1", escalated)
+	}
+}
+
+// 既に切替済みの手段に対する遅延/重複 PaymentFailed は無視し、手段を進めない。
+func TestService_StalePaymentFailedIgnored(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	_ = collection.NewService(bus)
+
+	var charges, escalations int
+	bus.Subscribe(events.NameChargeRequested, func(context.Context, shared.Event) error { charges++; return nil })
+	bus.Subscribe(events.NameCollectionEscalated, func(context.Context, shared.Event) error { escalations++; return nil })
+
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+	// 1 手段目（PM-card-primary）失敗 → PM-card-secondary へ切替（charge 2 回目）。
+	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", PaymentMethodID: "PM-card-primary", Reason: "x"})
+	// 同じ PM-card-primary の遅延/重複失敗が再到着 → 既に切替済みなので無視。
+	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", PaymentMethodID: "PM-card-primary", Reason: "x"})
+
+	if charges != 2 {
+		t.Errorf("ChargeRequested = %d, want 2（重複失敗は手段を進めない）", charges)
+	}
+	if escalations != 0 {
+		t.Errorf("CollectionEscalated = %d, want 0", escalations)
+	}
+}
+
+// 回収完了後に遅延 PaymentFailed が来ても CollectionEscalated を再発行しない。
+func TestService_NoEscalationAfterRecovered(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	_ = collection.NewService(bus)
+
+	var escalations int
+	bus.Subscribe(events.NameCollectionEscalated, func(context.Context, shared.Event) error { escalations++; return nil })
+
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+	mustPublish(t, bus, events.InvoicePaid{InvoiceID: "INV-1"}) // 回収完了
+	// 遅延した失敗（現在手段に一致）が到着しても終了済みなので何もしない。
+	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", PaymentMethodID: "PM-card-primary", Reason: "x"})
+
+	if escalations != 0 {
+		t.Errorf("CollectionEscalated = %d, want 0（回収済み案件は再エスカレーションしない）", escalations)
+	}
+}
+
+// defaultFallback は既定戦略の手段フォールバック順。
+var defaultFallback = []shared.PaymentMethodID{
+	"PM-card-primary", "PM-card-secondary", "PM-bank-transfer", "PM-payment-slip",
+}
+
+// failAllMethods は既定戦略の全手段に対し、フォールバック順に PaymentFailed を発行する。
+func failAllMethods(t *testing.T, bus shared.EventBus, inv shared.InvoiceID) {
+	t.Helper()
+	for _, m := range defaultFallback {
+		mustPublish(t, bus, events.PaymentFailed{InvoiceID: inv, PaymentMethodID: m, Reason: "insufficient_funds"})
 	}
 }
 

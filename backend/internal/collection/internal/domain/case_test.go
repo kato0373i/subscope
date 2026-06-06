@@ -147,6 +147,23 @@ func TestMarkRecovered_NoOpAfterEscalation(t *testing.T) {
 	}
 }
 
+// 終了済み案件への RecordFailure は NoOp を返し、状態を変えない（誤遷移・再発行の防止）。
+func TestRecordFailure_NoOpWhenClosed(t *testing.T) {
+	strat := DefaultStrategy()
+	strat.MethodFallback = []shared.PaymentMethodID{"PM-card-primary"}
+	c := NewCase("CASE-1", "INV-1", shared.JPY(3000), strat)
+	c.Start()
+	c.RecordFailure() // 手段が尽きてエスカレーション
+
+	d := c.RecordFailure()
+	if d.Kind != DecisionNoOp {
+		t.Errorf("Kind = %v, want NoOp", d.Kind)
+	}
+	if c.Status != StatusEscalated {
+		t.Errorf("Status = %q, want %q", c.Status, StatusEscalated)
+	}
+}
+
 func TestRetryPolicy_BackoffFixedInterval(t *testing.T) {
 	p := RetryPolicy{BaseBackoff: time.Hour, Multiplier: 1} // 固定間隔
 	for attempt, want := range map[int]time.Duration{0: 0, 1: time.Hour, 3: time.Hour} {

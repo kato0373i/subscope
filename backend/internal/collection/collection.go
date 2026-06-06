@@ -74,6 +74,13 @@ func (s *Service) onPaymentFailed(ctx context.Context, e shared.Event) error {
 	if !ok {
 		return nil
 	}
+	// 相関チェック：いま試行中の手段に対する失敗だけ受理する。
+	// 既に切替済みの手段や終了案件への遅延・重複通知を弾き、attempt の進みすぎ・督促の誤再起動を防ぐ。
+	current, ok := c.CurrentMethod()
+	if !ok || ev.PaymentMethodID != current {
+		log.Printf("[collection] stale/duplicate な PaymentFailed を無視 invoice=%s got=%s want=%s", ev.InvoiceID, ev.PaymentMethodID, current)
+		return nil
+	}
 	return s.apply(ctx, c, c.RecordFailure())
 }
 
@@ -97,6 +104,8 @@ func (s *Service) onInvoicePaid(ctx context.Context, e shared.Event) error {
 // apply は Case が下した次アクションをイベントとして発行する。
 func (s *Service) apply(ctx context.Context, c *domain.Case, d domain.Decision) error {
 	switch d.Kind {
+	case domain.DecisionNoOp:
+		return nil
 	case domain.DecisionRetry:
 		log.Printf("[collection] 課金要求 case=%s 手段=%s 次回間隔=%s", c.ID, d.Method, d.Backoff)
 		return s.bus.Publish(ctx, events.ChargeRequested{

@@ -18,6 +18,16 @@ func TestMember_New_ValidEmail(t *testing.T) {
 	}
 }
 
+func TestMember_New_SetsStatusActive(t *testing.T) {
+	m, err := New("MEM-001", shared.OrgID("ORG-001"), "テスト", "user@example.com")
+	if err != nil {
+		t.Fatalf("有効な入力でエラー: %v", err)
+	}
+	if m.Status != StatusActive {
+		t.Errorf("期待: StatusActive, 実際: %v", m.Status)
+	}
+}
+
 func TestMember_New_InvalidEmail(t *testing.T) {
 	cases := []string{
 		"",            // 空

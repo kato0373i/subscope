@@ -47,12 +47,12 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 	ev := e.(events.ChargeRequested)
 
 	// 冪等性：同一の課金要求（再送）は二重に決済しない。
-	if ev.IdempotencyKey != "" {
-		if s.seen[ev.IdempotencyKey] {
-			log.Printf("[payment]    重複課金要求を無視 key=%s（冪等）", ev.IdempotencyKey)
-			return nil
-		}
-		s.seen[ev.IdempotencyKey] = true
+	// 記録（seen）は下流への発行まで完了した後に行う。PSP 一時エラーや publish 失敗で
+	// 途中終了した場合は記録せず再試行可能に保ち、再試行時は同じ IdempotencyKey を
+	// Gateway へ渡して PSP 側でも重複実行を抑止する（最終的な二重課金防止は PSP の冪等キー）。
+	if ev.IdempotencyKey != "" && s.seen[ev.IdempotencyKey] {
+		log.Printf("[payment]    重複課金要求を無視 key=%s（冪等）", ev.IdempotencyKey)
+		return nil
 	}
 
 	s.seq++
@@ -68,11 +68,26 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 		InvoiceID:       ev.InvoiceID,
 		PaymentMethodID: ev.PaymentMethodID,
 		Amount:          ev.Amount,
+		IdempotencyKey:  ev.IdempotencyKey,
 	})
 	if err != nil {
 		return fmt.Errorf("payment: PSP 呼び出しに失敗 txn=%s: %w", tx.ID, err)
 	}
 
+	if err := s.applyOutcome(ctx, tx, ev, res); err != nil {
+		return err
+	}
+
+	// terminal な発行まで成功した後に冪等キーを記録する。
+	if ev.IdempotencyKey != "" {
+		s.seen[ev.IdempotencyKey] = true
+	}
+	return nil
+}
+
+// applyOutcome は PSP の結果を Transaction の状態遷移に反映し、対応する統合イベントを発行する。
+// 未知の Outcome（ゼロ値含む）は成功扱いせず error にする。
+func (s *Service) applyOutcome(ctx context.Context, tx *domain.Transaction, ev events.ChargeRequested, res ChargeResult) error {
 	switch res.Outcome {
 	case OutcomeFailed:
 		if err := tx.MarkFailed(res.Reason); err != nil {
@@ -98,7 +113,7 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 			Amount:          ev.Amount,
 		})
 
-	default: // OutcomeCaptured
+	case OutcomeCaptured:
 		if err := tx.MarkCaptured(); err != nil {
 			return err
 		}
@@ -108,5 +123,8 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 			TransactionID: tx.ID,
 			Amount:        ev.Amount,
 		})
+
+	default:
+		return fmt.Errorf("payment: 未知のゲートウェイ結果 outcome=%d txn=%s", res.Outcome, tx.ID)
 	}
 }

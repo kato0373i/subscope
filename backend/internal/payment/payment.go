@@ -1,5 +1,9 @@
 // Package payment は決済実行モジュールの公開 API。
-// PSP（決済代行）への呼び出しは本来この層の ACL に閉じ込める。
+// Invoice と PaymentMethod が「1 回の試行」として初めて出会う層であり、
+// PSP（決済代行）への呼び出しは ACL（Gateway）に閉じ込める。
+//
+// クレカは同期で captured、口座振替・払込票は pending を返して後日 settlement が
+// 確定させる。この非同期性を Transaction の Status で一級市民として扱う。
 package payment
 
 import (
@@ -14,15 +18,24 @@ import (
 
 type Service struct {
 	bus shared.EventBus
+	gw  Gateway
 	txs map[shared.TransactionID]*domain.Transaction
 	// seen は処理済みの課金要求キー。PSP の二重通知・イベント再送による二重決済を防ぐ。
 	seen map[shared.IdempotencyKey]bool
 	seq  int
 }
 
+// NewService は本番既定の MockGateway で Service を組み立てる。
 func NewService(bus shared.EventBus) *Service {
+	return NewServiceWithGateway(bus, MockGateway{})
+}
+
+// NewServiceWithGateway は PSP ゲートウェイ（ACL）を差し替え可能にする。
+// テストや PSP ごとの実装切替で使う。
+func NewServiceWithGateway(bus shared.EventBus, gw Gateway) *Service {
 	s := &Service{
 		bus:  bus,
+		gw:   gw,
 		txs:  make(map[shared.TransactionID]*domain.Transaction),
 		seen: make(map[shared.IdempotencyKey]bool),
 	}
@@ -49,9 +62,22 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 	)
 	s.txs[tx.ID] = tx
 
-	// PSP への決済実行を模擬。本来は ACL 経由でゲートウェイを呼ぶ。
-	if simulateGatewayFails(ev.PaymentMethodID) {
-		tx.MarkFailed("insufficient_funds")
+	// PSP への決済実行は ACL（Gateway）越しに行い、ベンダ差異・確定タイミングを閉じ込める。
+	res, err := s.gw.Charge(ctx, ChargeInput{
+		TransactionID:   tx.ID,
+		InvoiceID:       ev.InvoiceID,
+		PaymentMethodID: ev.PaymentMethodID,
+		Amount:          ev.Amount,
+	})
+	if err != nil {
+		return fmt.Errorf("payment: PSP 呼び出しに失敗 txn=%s: %w", tx.ID, err)
+	}
+
+	switch res.Outcome {
+	case OutcomeFailed:
+		if err := tx.MarkFailed(res.Reason); err != nil {
+			return err
+		}
 		log.Printf("[payment]    決済失敗 txn=%s method=%s reason=%s", tx.ID, ev.PaymentMethodID, tx.FailureReason)
 		return s.bus.Publish(ctx, events.PaymentFailed{
 			InvoiceID:       ev.InvoiceID,
@@ -59,17 +85,28 @@ func (s *Service) onChargeRequested(ctx context.Context, e shared.Event) error {
 			PaymentMethodID: ev.PaymentMethodID,
 			Reason:          tx.FailureReason,
 		})
-	}
-	tx.MarkCaptured()
-	log.Printf("[payment]    決済成功 txn=%s method=%s amount=%s", tx.ID, ev.PaymentMethodID, tx.Amount)
-	return s.bus.Publish(ctx, events.PaymentSucceeded{
-		InvoiceID:     ev.InvoiceID,
-		TransactionID: tx.ID,
-		Amount:        ev.Amount,
-	})
-}
 
-// simulateGatewayFails はデモ用に主カードを失敗させ、回収戦略のフォールバックを発火させる。
-func simulateGatewayFails(m shared.PaymentMethodID) bool {
-	return m == "PM-card-primary"
+	case OutcomePending:
+		if err := tx.MarkPending(); err != nil {
+			return err
+		}
+		log.Printf("[payment]    後日確定待ち txn=%s method=%s amount=%s（pending）", tx.ID, ev.PaymentMethodID, tx.Amount)
+		return s.bus.Publish(ctx, events.PaymentPending{
+			InvoiceID:       ev.InvoiceID,
+			TransactionID:   tx.ID,
+			PaymentMethodID: ev.PaymentMethodID,
+			Amount:          ev.Amount,
+		})
+
+	default: // OutcomeCaptured
+		if err := tx.MarkCaptured(); err != nil {
+			return err
+		}
+		log.Printf("[payment]    決済成功 txn=%s method=%s amount=%s", tx.ID, ev.PaymentMethodID, tx.Amount)
+		return s.bus.Publish(ctx, events.PaymentSucceeded{
+			InvoiceID:     ev.InvoiceID,
+			TransactionID: tx.ID,
+			Amount:        ev.Amount,
+		})
+	}
 }

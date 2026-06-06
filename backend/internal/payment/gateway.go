@@ -103,6 +103,8 @@ func NewStubGateway() *StubGateway {
 
 // Returns は特定の決済手段に対する固定結果を登録する（チェーン可能）。
 func (g *StubGateway) Returns(method shared.PaymentMethodID, res ChargeResult) *StubGateway {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.byMethod[method] = res
 	return g
 }
@@ -124,6 +126,8 @@ func (g *StubGateway) Fails(method shared.PaymentMethodID, reason string) *StubG
 
 // Default は手段未登録時に返す既定結果を差し替える。
 func (g *StubGateway) Default(res ChargeResult) *StubGateway {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.fallback = res
 	return g
 }

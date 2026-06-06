@@ -5,13 +5,13 @@ package events
 import "github.com/kato0373i/subscope/backend/internal/shared"
 
 const (
-	NameBillingDue            = "contract.BillingDue"
-	NameInvoiceIssued         = "billing.InvoiceIssued"
-	NameChargeRequested       = "collection.ChargeRequested"
-	NameCollectionEscalated   = "collection.CollectionEscalated"
-	NamePaymentSucceeded      = "payment.PaymentSucceeded"
-	NamePaymentFailed         = "payment.PaymentFailed"
-	NameInvoicePaid           = "settlement.InvoicePaid"
+	NameBillingDue          = "contract.BillingDue"
+	NameInvoiceIssued       = "billing.InvoiceIssued"
+	NameChargeRequested     = "collection.ChargeRequested"
+	NameCollectionEscalated = "collection.CollectionEscalated"
+	NamePaymentSucceeded    = "payment.PaymentSucceeded"
+	NamePaymentFailed       = "payment.PaymentFailed"
+	NameInvoicePaid         = "settlement.InvoicePaid"
 )
 
 // BillingDue は契約の請求サイクル到来。contract が発行する。

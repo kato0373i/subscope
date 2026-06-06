@@ -5,13 +5,16 @@ package events
 import "github.com/kato0373i/subscope/backend/internal/shared"
 
 const (
-	NameBillingDue          = "contract.BillingDue"
-	NameInvoiceIssued       = "billing.InvoiceIssued"
-	NameChargeRequested     = "collection.ChargeRequested"
-	NameCollectionEscalated = "collection.CollectionEscalated"
-	NamePaymentSucceeded    = "payment.PaymentSucceeded"
-	NamePaymentFailed       = "payment.PaymentFailed"
-	NameInvoicePaid         = "settlement.InvoicePaid"
+	NameBillingDue                       = "contract.BillingDue"
+	NameInvoiceIssued                    = "billing.InvoiceIssued"
+	NameChargeRequested                  = "collection.ChargeRequested"
+	NameCollectionEscalated              = "collection.CollectionEscalated"
+	NamePaymentSucceeded                 = "payment.PaymentSucceeded"
+	NamePaymentFailed                    = "payment.PaymentFailed"
+	NameInvoicePaid                      = "settlement.InvoicePaid"
+	NamePaymentMethodRegistered          = "paymentmethod.PaymentMethodRegistered"
+	NameBankAccountRegistrationCompleted = "paymentmethod.BankAccountRegistrationCompleted"
+	NamePaymentMethodExpired             = "paymentmethod.PaymentMethodExpired"
 )
 
 // BillingDue は契約の請求サイクル到来。contract が発行する。
@@ -79,3 +82,32 @@ type InvoicePaid struct {
 }
 
 func (InvoicePaid) EventName() string { return NameInvoicePaid }
+
+// PaymentMethodRegistered は決済手段の登録完了。paymentmethod が発行する。
+type PaymentMethodRegistered struct {
+	PaymentMethodID  shared.PaymentMethodID
+	BillingAccountID shared.BillingAccountID
+	MethodType       string
+}
+
+func (PaymentMethodRegistered) EventName() string { return NamePaymentMethodRegistered }
+
+// BankAccountRegistrationCompleted は口座振替の銀行審査通過。paymentmethod が発行する。
+// 受信側（collection）はこのイベントで口座振替を回収手段として使えるようになる。
+type BankAccountRegistrationCompleted struct {
+	PaymentMethodID  shared.PaymentMethodID
+	BillingAccountID shared.BillingAccountID
+}
+
+func (BankAccountRegistrationCompleted) EventName() string {
+	return NameBankAccountRegistrationCompleted
+}
+
+// PaymentMethodExpired はカード期限切れ。paymentmethod が発行する。
+// collection はこのイベントで当該手段を戦略から除外する。
+type PaymentMethodExpired struct {
+	PaymentMethodID  shared.PaymentMethodID
+	BillingAccountID shared.BillingAccountID
+}
+
+func (PaymentMethodExpired) EventName() string { return NamePaymentMethodExpired }

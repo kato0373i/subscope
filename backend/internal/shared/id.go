@@ -7,6 +7,7 @@ type (
 	MemberID         string
 	BillingAccountID string
 	ContractID       string
+	PlanID           string
 	InvoiceID        string
 	PaymentMethodID  string
 	TransactionID    string

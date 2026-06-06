@@ -55,7 +55,11 @@ func (s *Service) onPaymentFailed(ctx context.Context, e shared.Event) error {
 	method, ok := c.NextMethod()
 	if !ok {
 		log.Printf("[collection] 全手段が尽きた case=%s → エスカレーション（督促/解約へ）", c.ID)
-		return s.bus.Publish(ctx) // 実装では CollectionEscalated を発行
+		return s.bus.Publish(ctx, events.CollectionEscalated{
+			CaseID:    c.ID,
+			InvoiceID: c.Invoice,
+			Amount:    c.Amount,
+		})
 	}
 	log.Printf("[collection] 決済失敗 → 戦略に従い手段を切替 case=%s 次の手段=%s", c.ID, method)
 	return s.bus.Publish(ctx, events.ChargeRequested{

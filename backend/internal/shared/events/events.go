@@ -5,12 +5,13 @@ package events
 import "github.com/kato0373i/subscope/backend/internal/shared"
 
 const (
-	NameBillingDue       = "contract.BillingDue"
-	NameInvoiceIssued    = "billing.InvoiceIssued"
-	NameChargeRequested  = "collection.ChargeRequested"
-	NamePaymentSucceeded = "payment.PaymentSucceeded"
-	NamePaymentFailed    = "payment.PaymentFailed"
-	NameInvoicePaid      = "settlement.InvoicePaid"
+	NameBillingDue          = "contract.BillingDue"
+	NameInvoiceIssued       = "billing.InvoiceIssued"
+	NameChargeRequested     = "collection.ChargeRequested"
+	NameCollectionEscalated = "collection.CollectionEscalated"
+	NamePaymentSucceeded    = "payment.PaymentSucceeded"
+	NamePaymentFailed       = "payment.PaymentFailed"
+	NameInvoicePaid         = "settlement.InvoicePaid"
 )
 
 // BillingDue は契約の請求サイクル到来。contract が発行する。
@@ -61,6 +62,16 @@ type PaymentFailed struct {
 }
 
 func (PaymentFailed) EventName() string { return NamePaymentFailed }
+
+// CollectionEscalated は全決済手段が尽きた回収案件のエスカレーション。collection が発行する。
+// 受信側（督促・解約モジュール等）はこのイベントを機に次アクションを実行する。
+type CollectionEscalated struct {
+	CaseID    shared.CollectionCaseID
+	InvoiceID shared.InvoiceID
+	Amount    shared.Money
+}
+
+func (CollectionEscalated) EventName() string { return NameCollectionEscalated }
 
 // InvoicePaid は入金の消込完了。settlement が発行する。
 type InvoicePaid struct {

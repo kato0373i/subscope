@@ -35,3 +35,11 @@ func (i *Invoice) MarkPaid() {
 		i.Status = StatusPaid
 	}
 }
+
+// MarkVoid は発行済みの請求書を無効化する（修正は赤伝＝CreditNote で対応）。
+// issued からのみ void へ進める。
+func (i *Invoice) MarkVoid() {
+	if i.Status == StatusIssued {
+		i.Status = StatusVoid
+	}
+}

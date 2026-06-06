@@ -10,7 +10,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/shared/events"
 )
 
-// 課金要求に成功すると PaymentSucceeded を発行する。
+// 副カード（PM-card-secondary）は成功を模擬し、PaymentSucceeded を発行する。
 func TestService_ChargeSucceeds(t *testing.T) {
 	bus := eventbus.NewInMemory()
 	_ = payment.NewService(bus)

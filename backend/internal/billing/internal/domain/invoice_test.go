@@ -38,7 +38,7 @@ func TestMarkPaid_IsMonotonic(t *testing.T) {
 // void からは paid へ進めない（issued からのみ paid へ）。
 func TestMarkPaid_RejectsNonIssued(t *testing.T) {
 	inv := NewIssued("INV-1", "CT-1", "BA-1", shared.JPY(3000))
-	inv.Status = StatusVoid
+	inv.MarkVoid()
 	inv.MarkPaid()
 	if inv.Status != StatusVoid {
 		t.Errorf("void からは遷移しないべき: Status = %q", inv.Status)

@@ -10,6 +10,7 @@ const (
 	NameChargeRequested                  = "collection.ChargeRequested"
 	NameCollectionEscalated              = "collection.CollectionEscalated"
 	NamePaymentSucceeded                 = "payment.PaymentSucceeded"
+	NamePaymentPending                   = "payment.PaymentPending"
 	NamePaymentFailed                    = "payment.PaymentFailed"
 	NameInvoicePaid                      = "settlement.InvoicePaid"
 	NamePaymentMethodRegistered          = "paymentmethod.PaymentMethodRegistered"
@@ -57,6 +58,18 @@ type PaymentSucceeded struct {
 }
 
 func (PaymentSucceeded) EventName() string { return NamePaymentSucceeded }
+
+// PaymentPending は後日確定待ちの決済試行。payment が発行する。
+// クレカと違い口座振替・払込票は結果が後日確定するため、collection はこれを失敗扱いせず
+// （手段を切り替えず）入金確定を待つ。確定の事実は後で settlement が取り込む（#11）。
+type PaymentPending struct {
+	InvoiceID       shared.InvoiceID
+	TransactionID   shared.TransactionID
+	PaymentMethodID shared.PaymentMethodID
+	Amount          shared.Money
+}
+
+func (PaymentPending) EventName() string { return NamePaymentPending }
 
 // PaymentFailed は決済試行の失敗。payment が発行し、collection が手段の切替を判断する。
 type PaymentFailed struct {

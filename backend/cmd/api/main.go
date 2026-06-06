@@ -37,28 +37,39 @@ func main() {
 	ctx := context.Background()
 
 	// デモ: テナント・会員・請求先を設定する。
-	orgs.Register("ORG-0001", "サンプル協会")
-	members.Register("MEM-0001", "ORG-0001", "山田 太郎", "yamada@example.com")
-	accounts.Register("BA-0001", "ORG-0001", "山田 太郎")
-	accounts.AddMember("BA-0001", "MEM-0001")
+	if err := orgs.Register("ORG-0001", "サンプル協会"); err != nil {
+		log.Fatalf("orgs.Register: %v", err)
+	}
+	if err := members.Register("MEM-0001", "ORG-0001", "山田 太郎", "yamada@example.com"); err != nil {
+		log.Fatalf("members.Register: %v", err)
+	}
+	if err := accounts.Register("BA-0001", "ORG-0001", "山田 太郎"); err != nil {
+		log.Fatalf("accounts.Register: %v", err)
+	}
+	if err := accounts.AddMember("BA-0001", "MEM-0001"); err != nil {
+		log.Fatalf("accounts.AddMember: %v", err)
+	}
 
 	// デモ: 決済手段を登録する（クレカ2枚 + 払込票）。
 	if err := pms.RegisterCreditCard(ctx, "PM-card-primary", "BA-0001", "tok_visa_001", 1); err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("RegisterCreditCard: %v", err)
 	}
 	if err := pms.RegisterCreditCard(ctx, "PM-card-secondary", "BA-0001", "tok_mc_002", 2); err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("RegisterCreditCard: %v", err)
 	}
 	if err := pms.RegisterPaymentSlip(ctx, "PM-payment-slip", "BA-0001", 4); err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("RegisterPaymentSlip: %v", err)
 	}
 
-	// デモ: 口座振替を登録して審査を通過させる。
+	// デモ: 口座振替を登録して審査を通過させる（pending → reviewing → completed）。
 	if err := pms.RegisterBankAccount(ctx, "PM-bank-transfer", "BA-0001", "tok_bank_003", 3); err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("RegisterBankAccount: %v", err)
+	}
+	if err := pms.StartBankAccountReview(ctx, "PM-bank-transfer"); err != nil {
+		log.Fatalf("StartBankAccountReview: %v", err)
 	}
 	if err := pms.CompleteBankAccountRegistration(ctx, "PM-bank-transfer"); err != nil {
-		log.Fatalf("error: %v", err)
+		log.Fatalf("CompleteBankAccountRegistration: %v", err)
 	}
 
 	// デモ: 月会費 3,000 円の契約を登録する。

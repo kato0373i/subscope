@@ -16,6 +16,7 @@ const (
 )
 
 // TaxCategory は税区分。billing ドメインが独立して保持し、tax モジュールに依存しない。
+// NetAmount は税込金額を想定する。税計算は請求書生成前に呼び出し元が解決する。
 type TaxCategory string
 
 const (
@@ -73,6 +74,18 @@ func (i *Invoice) AddLine(line InvoiceLine) error {
 	if i.Status != StatusDraft {
 		return ErrAlreadyIssued
 	}
+	if line.Description == "" {
+		return errors.New("明細の説明は必須です")
+	}
+	if line.Quantity <= 0 {
+		return errors.New("数量は1以上でなければなりません")
+	}
+	if line.NetAmount.IsNegative() {
+		return errors.New("明細の金額は負の値にできません")
+	}
+	if len(i.Lines) > 0 && i.Lines[0].NetAmount.Currency != line.NetAmount.Currency {
+		return errors.New("明細の通貨は統一されなければなりません")
+	}
 	i.Lines = append(i.Lines, line)
 	return nil
 }
@@ -83,7 +96,11 @@ func (i *Invoice) Issue() error {
 	if i.Status != StatusDraft {
 		return ErrAlreadyIssued
 	}
-	total := shared.Money{Currency: "JPY"}
+	if len(i.Lines) == 0 {
+		return errors.New("明細のない請求書は発行できません")
+	}
+	currency := i.Lines[0].NetAmount.Currency
+	total := shared.Money{Currency: currency}
 	for _, l := range i.Lines {
 		amt, err := total.Add(l.NetAmount)
 		if err != nil {

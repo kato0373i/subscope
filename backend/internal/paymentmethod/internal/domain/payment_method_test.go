@@ -51,13 +51,17 @@ func TestBankAccount_RegistrationStateMachine(t *testing.T) {
 	}
 
 	// 二重完了はエラー
-	if err := pm.CompleteRegistration(); err != ErrAlreadyCompleted {
-		t.Fatalf("二重完了は ErrAlreadyCompleted を返すべき、got: %v", err)
+	if err := pm.CompleteRegistration(); err != ErrNotReviewing {
+		t.Fatalf("二重完了は ErrNotReviewing を返すべき、got: %v", err)
 	}
 }
 
 func TestBankAccount_Rejection(t *testing.T) {
 	pm := NewBankAccount("PM-003", shared.BillingAccountID("BA-001"), "tok_bank", 3)
+	// 審査開始してから否認
+	if err := pm.StartReview(); err != nil {
+		t.Fatalf("StartReview: %v", err)
+	}
 	if err := pm.RejectRegistration(); err != nil {
 		t.Fatalf("RejectRegistration: %v", err)
 	}
@@ -69,9 +73,35 @@ func TestBankAccount_Rejection(t *testing.T) {
 	}
 }
 
+func TestBankAccount_PendingRejectFails(t *testing.T) {
+	pm := NewBankAccount("PM-005", shared.BillingAccountID("BA-001"), "tok_bank", 5)
+	// pending から直接 RejectRegistration はエラー
+	if err := pm.RejectRegistration(); err != ErrNotReviewing {
+		t.Fatalf("pending → RejectRegistration は ErrNotReviewing を返すべき、got: %v", err)
+	}
+}
+
+func TestBankAccount_PendingCompleteFails(t *testing.T) {
+	pm := NewBankAccount("PM-006", shared.BillingAccountID("BA-001"), "tok_bank", 6)
+	// pending から直接 CompleteRegistration はエラー
+	if err := pm.CompleteRegistration(); err != ErrNotReviewing {
+		t.Fatalf("pending → CompleteRegistration は ErrNotReviewing を返すべき、got: %v", err)
+	}
+}
+
 func TestCreditCard_StartReview_Error(t *testing.T) {
 	pm := NewCreditCard("PM-004", "BA-001", "tok", 1)
 	if err := pm.StartReview(); err != ErrNotBankAccount {
 		t.Fatalf("クレカへの StartReview は ErrNotBankAccount を返すべき、got: %v", err)
+	}
+}
+
+func TestRegistrationStatus_ReturnsCopy(t *testing.T) {
+	pm := NewBankAccount("PM-007", shared.BillingAccountID("BA-001"), "tok_bank", 7)
+	s := pm.RegistrationStatus()
+	// 返されたポインタを書き換えても内部状態が変わらないことを確認
+	*s = RegStatusCompleted
+	if *pm.RegistrationStatus() != RegStatusPending {
+		t.Fatal("RegistrationStatus() の戻り値を変更しても内部状態に影響しないべき")
 	}
 }

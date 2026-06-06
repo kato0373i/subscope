@@ -56,6 +56,7 @@ var (
 	ErrAlreadyCompleted     = errors.New("登録はすでに完了しています")
 	ErrAlreadyRejected      = errors.New("登録は否認済みです")
 	ErrRegistrationNotReady = errors.New("口座振替の登録が完了していないため使用できません")
+	ErrNotReviewing         = errors.New("この操作は審査中状態からのみ実行できます")
 )
 
 func NewCreditCard(id shared.PaymentMethodID, accountID shared.BillingAccountID, pspToken string, priority int) *PaymentMethod {
@@ -103,9 +104,14 @@ func NewVirtualAccount(id shared.PaymentMethodID, accountID shared.BillingAccoun
 	}
 }
 
-// RegistrationStatus は口座振替の登録状態を返す（非口座振替の場合は nil）。
+// RegistrationStatus は口座振替の登録状態のコピーを返す（非口座振替の場合は nil）。
+// ポインタを返すが内部フィールドとは別の値なので外部からの変更は反映されない。
 func (p *PaymentMethod) RegistrationStatus() *RegistrationStatus {
-	return p.registrationStatus
+	if p.registrationStatus == nil {
+		return nil
+	}
+	s := *p.registrationStatus
+	return &s
 }
 
 // StartReview は銀行審査開始（依頼受付→審査中）。
@@ -121,16 +127,13 @@ func (p *PaymentMethod) StartReview() error {
 	return nil
 }
 
-// CompleteRegistration は口座振替の銀行審査通過。登録完了にして利用可能にする。
+// CompleteRegistration は口座振替の銀行審査通過。reviewing からのみ遷移できる。
 func (p *PaymentMethod) CompleteRegistration() error {
 	if p.Type != TypeBankAccount {
 		return ErrNotBankAccount
 	}
-	if *p.registrationStatus == RegStatusCompleted {
-		return ErrAlreadyCompleted
-	}
-	if *p.registrationStatus == RegStatusRejected {
-		return ErrAlreadyRejected
+	if *p.registrationStatus != RegStatusReviewing {
+		return ErrNotReviewing
 	}
 	s := RegStatusCompleted
 	p.registrationStatus = &s
@@ -138,13 +141,13 @@ func (p *PaymentMethod) CompleteRegistration() error {
 	return nil
 }
 
-// RejectRegistration は口座振替の銀行審査否認。
+// RejectRegistration は口座振替の銀行審査否認。reviewing からのみ遷移できる。
 func (p *PaymentMethod) RejectRegistration() error {
 	if p.Type != TypeBankAccount {
 		return ErrNotBankAccount
 	}
-	if *p.registrationStatus == RegStatusCompleted {
-		return ErrAlreadyCompleted
+	if *p.registrationStatus != RegStatusReviewing {
+		return ErrNotReviewing
 	}
 	s := RegStatusRejected
 	p.registrationStatus = &s

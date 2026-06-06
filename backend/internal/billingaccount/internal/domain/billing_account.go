@@ -1,6 +1,10 @@
 package domain
 
-import "github.com/kato0373i/subscope/backend/internal/shared"
+import (
+	"errors"
+
+	"github.com/kato0373i/subscope/backend/internal/shared"
+)
 
 // BillingAccount は請求先・支払者の集約。
 // 複数の Member を束ねられる（団体一括請求）。
@@ -12,13 +16,16 @@ type BillingAccount struct {
 	MemberIDs []shared.MemberID
 }
 
-func New(id shared.BillingAccountID, orgID shared.OrgID, name string) *BillingAccount {
+func New(id shared.BillingAccountID, orgID shared.OrgID, name string) (*BillingAccount, error) {
+	if name == "" {
+		return nil, errors.New("請求先名は必須です")
+	}
 	return &BillingAccount{
 		ID:        id,
 		OrgID:     orgID,
 		Name:      name,
 		MemberIDs: []shared.MemberID{},
-	}
+	}, nil
 }
 
 // AddMember は BillingAccount に会員を紐付ける（重複は無視）。

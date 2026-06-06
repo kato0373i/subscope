@@ -1,6 +1,11 @@
 package domain
 
-import "github.com/kato0373i/subscope/backend/internal/shared"
+import (
+	"errors"
+	"strings"
+
+	"github.com/kato0373i/subscope/backend/internal/shared"
+)
 
 type Status string
 
@@ -19,14 +24,17 @@ type Member struct {
 	Status Status
 }
 
-func New(id shared.MemberID, orgID shared.OrgID, name, email string) *Member {
+func New(id shared.MemberID, orgID shared.OrgID, name, email string) (*Member, error) {
+	if !strings.Contains(email, "@") {
+		return nil, errors.New("メールアドレスの形式が不正です")
+	}
 	return &Member{
 		ID:     id,
 		OrgID:  orgID,
 		Name:   name,
 		Email:  email,
 		Status: StatusActive,
-	}
+	}, nil
 }
 
 func (m *Member) Deactivate() { m.Status = StatusInactive }

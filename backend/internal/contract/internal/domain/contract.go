@@ -84,6 +84,21 @@ func NewFull(
 	anchor BillingAnchor,
 	trial TrialPeriod,
 ) *Contract {
+	// BillingCycle の正規化: 未知の値は monthly にフォールバック。
+	if cycle != CycleMonthly && cycle != CycleQuarterly && cycle != CycleAnnual {
+		cycle = CycleMonthly
+	}
+	// BillingAnchor の正規化: 有効範囲 1〜31 にクランプ。
+	if anchor <= 0 {
+		anchor = 1
+	} else if anchor > 31 {
+		anchor = 31
+	}
+	// TrialPeriod の正規化: 負の値は 0 に丸める。
+	if trial.Days < 0 {
+		trial.Days = 0
+	}
+
 	now := time.Now()
 	status := StatusActive
 	if trial.Days > 0 {

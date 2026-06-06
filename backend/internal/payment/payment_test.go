@@ -62,3 +62,30 @@ func TestService_ChargeFails(t *testing.T) {
 		t.Error("FailureReason が空")
 	}
 }
+
+// 同一の課金要求（冪等キー）が再送されても、決済は一度だけ実行される（二重決済しない）。
+func TestService_ChargeIsIdempotent(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	_ = payment.NewService(bus)
+
+	var succeeded int
+	bus.Subscribe(events.NamePaymentSucceeded, func(context.Context, shared.Event) error { succeeded++; return nil })
+
+	charge := events.ChargeRequested{
+		InvoiceID:       "INV-1",
+		PaymentMethodID: "PM-card-secondary",
+		Amount:          shared.JPY(3000),
+		IdempotencyKey:  "charge:INV-1:0",
+	}
+	// PSP webhook 二重通知を模擬し、同じ課金要求を 2 回発行する。
+	if err := bus.Publish(context.Background(), charge); err != nil {
+		t.Fatalf("Publish#1: %v", err)
+	}
+	if err := bus.Publish(context.Background(), charge); err != nil {
+		t.Fatalf("Publish#2: %v", err)
+	}
+
+	if succeeded != 1 {
+		t.Errorf("PaymentSucceeded = %d, want 1（冪等キーで二重決済を抑止）", succeeded)
+	}
+}

@@ -39,10 +39,12 @@ func (InvoiceIssued) EventName() string { return NameInvoiceIssued }
 
 // ChargeRequested は回収戦略が選んだ決済手段での課金要求。collection が発行する。
 // ここで初めて InvoiceID と PaymentMethodID が同居する。
+// IdempotencyKey は課金試行を一意に識別し、再送時の二重決済を防ぐ。
 type ChargeRequested struct {
 	InvoiceID       shared.InvoiceID
 	PaymentMethodID shared.PaymentMethodID
 	Amount          shared.Money
+	IdempotencyKey  shared.IdempotencyKey
 }
 
 func (ChargeRequested) EventName() string { return NameChargeRequested }

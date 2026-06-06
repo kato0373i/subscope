@@ -21,6 +21,9 @@ func NewService() *Service {
 func (s *Service) Register(id shared.BillingAccountID, orgID shared.OrgID, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.accounts[id]; exists {
+		return errors.New("請求先 ID が重複しています")
+	}
 	a, err := domain.New(id, orgID, name)
 	if err != nil {
 		return err

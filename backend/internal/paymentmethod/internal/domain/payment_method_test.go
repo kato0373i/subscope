@@ -105,3 +105,28 @@ func TestRegistrationStatus_ReturnsCopy(t *testing.T) {
 		t.Fatal("RegistrationStatus() の戻り値を変更しても内部状態に影響しないべき")
 	}
 }
+
+func TestBankAccount_RevertCompletion(t *testing.T) {
+	pm := NewBankAccount("PM-008", shared.BillingAccountID("BA-001"), "tok_bank", 8)
+	if err := pm.StartReview(); err != nil {
+		t.Fatalf("StartReview: %v", err)
+	}
+	if err := pm.CompleteRegistration(); err != nil {
+		t.Fatalf("CompleteRegistration: %v", err)
+	}
+	if !pm.IsUsable() {
+		t.Fatal("完了後は使用可能でなければならない")
+	}
+
+	// 補償遷移: completed → reviewing に戻す
+	pm.RevertCompletion()
+	if pm.IsUsable() {
+		t.Fatal("RevertCompletion 後は使用不可でなければならない")
+	}
+	if *pm.RegistrationStatus() != RegStatusReviewing {
+		t.Fatalf("RevertCompletion 後は reviewing でなければならない: got %s", *pm.RegistrationStatus())
+	}
+	if pm.Status != MethodStatusSuspended {
+		t.Fatalf("RevertCompletion 後の Status は suspended でなければならない: got %s", pm.Status)
+	}
+}

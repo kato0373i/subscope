@@ -25,7 +25,8 @@ type Member struct {
 }
 
 func New(id shared.MemberID, orgID shared.OrgID, name, email string) (*Member, error) {
-	if !strings.Contains(email, "@") {
+	atIndex := strings.Index(email, "@")
+	if atIndex <= 0 || atIndex == len(email)-1 || strings.Count(email, "@") != 1 {
 		return nil, errors.New("メールアドレスの形式が不正です")
 	}
 	return &Member{

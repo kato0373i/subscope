@@ -141,6 +141,13 @@ func (p *PaymentMethod) CompleteRegistration() error {
 	return nil
 }
 
+// RevertCompletion は CompleteRegistration の補償遷移。発行失敗時のロールバックに使う。
+func (p *PaymentMethod) RevertCompletion() {
+	s := RegStatusReviewing
+	p.registrationStatus = &s
+	p.Status = MethodStatusSuspended
+}
+
 // RejectRegistration は口座振替の銀行審査否認。reviewing からのみ遷移できる。
 func (p *PaymentMethod) RejectRegistration() error {
 	if p.Type != TypeBankAccount {

@@ -26,6 +26,10 @@ func NewService(bus shared.EventBus) *Service {
 func (s *Service) RegisterCreditCard(ctx context.Context, id shared.PaymentMethodID, accountID shared.BillingAccountID, pspToken string, priority int) error {
 	pm := domain.NewCreditCard(id, accountID, pspToken, priority)
 	s.mu.Lock()
+	if _, exists := s.methods[id]; exists {
+		s.mu.Unlock()
+		return errors.New("決済手段 ID が重複しています")
+	}
 	s.methods[id] = pm
 	s.mu.Unlock()
 	log.Printf("[paymentmethod] クレジットカード登録 id=%s account=%s", id, accountID)
@@ -45,6 +49,10 @@ func (s *Service) RegisterCreditCard(ctx context.Context, id shared.PaymentMetho
 func (s *Service) RegisterBankAccount(ctx context.Context, id shared.PaymentMethodID, accountID shared.BillingAccountID, pspToken string, priority int) error {
 	pm := domain.NewBankAccount(id, accountID, pspToken, priority)
 	s.mu.Lock()
+	if _, exists := s.methods[id]; exists {
+		s.mu.Unlock()
+		return errors.New("決済手段 ID が重複しています")
+	}
 	s.methods[id] = pm
 	s.mu.Unlock()
 	log.Printf("[paymentmethod] 口座振替登録依頼 id=%s account=%s（審査待ち）", id, accountID)
@@ -64,6 +72,10 @@ func (s *Service) RegisterBankAccount(ctx context.Context, id shared.PaymentMeth
 func (s *Service) RegisterPaymentSlip(ctx context.Context, id shared.PaymentMethodID, accountID shared.BillingAccountID, priority int) error {
 	pm := domain.NewPaymentSlip(id, accountID, priority)
 	s.mu.Lock()
+	if _, exists := s.methods[id]; exists {
+		s.mu.Unlock()
+		return errors.New("決済手段 ID が重複しています")
+	}
 	s.methods[id] = pm
 	s.mu.Unlock()
 	log.Printf("[paymentmethod] 払込票登録 id=%s account=%s", id, accountID)
@@ -82,9 +94,9 @@ func (s *Service) RegisterPaymentSlip(ctx context.Context, id shared.PaymentMeth
 
 // StartBankAccountReview は銀行審査開始を記録する（pending → reviewing）。
 func (s *Service) StartBankAccountReview(_ context.Context, id shared.PaymentMethodID) error {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	pm, ok := s.methods[id]
-	s.mu.RUnlock()
 	if !ok {
 		return errors.New("決済手段が見つかりません")
 	}
@@ -92,37 +104,59 @@ func (s *Service) StartBankAccountReview(_ context.Context, id shared.PaymentMet
 }
 
 // CompleteBankAccountRegistration は銀行審査の通過を記録する。
+// Publish 失敗時は補償遷移で状態をロールバックする。
 func (s *Service) CompleteBankAccountRegistration(ctx context.Context, id shared.PaymentMethodID) error {
-	s.mu.RLock()
+	s.mu.Lock()
 	pm, ok := s.methods[id]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.Unlock()
 		return errors.New("決済手段が見つかりません")
 	}
 	if err := pm.CompleteRegistration(); err != nil {
+		s.mu.Unlock()
 		return err
 	}
+	accountID := pm.BillingAccountID
+	s.mu.Unlock()
+
 	log.Printf("[paymentmethod] 口座振替 登録完了 id=%s（使用可能になりました）", id)
-	return s.bus.Publish(ctx, events.BankAccountRegistrationCompleted{
+	if err := s.bus.Publish(ctx, events.BankAccountRegistrationCompleted{
 		PaymentMethodID:  id,
-		BillingAccountID: pm.BillingAccountID,
-	})
+		BillingAccountID: accountID,
+	}); err != nil {
+		s.mu.Lock()
+		pm.RevertCompletion()
+		s.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // ExpireMethod はカード期限切れ等を記録する。
+// Publish 失敗時は補償遷移で状態をロールバックする。
 func (s *Service) ExpireMethod(ctx context.Context, id shared.PaymentMethodID) error {
-	s.mu.RLock()
+	s.mu.Lock()
 	pm, ok := s.methods[id]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.Unlock()
 		return errors.New("決済手段が見つかりません")
 	}
+	prevStatus := pm.Status
 	pm.Expire()
+	accountID := pm.BillingAccountID
+	s.mu.Unlock()
+
 	log.Printf("[paymentmethod] 決済手段 失効 id=%s", id)
-	return s.bus.Publish(ctx, events.PaymentMethodExpired{
+	if err := s.bus.Publish(ctx, events.PaymentMethodExpired{
 		PaymentMethodID:  id,
-		BillingAccountID: pm.BillingAccountID,
-	})
+		BillingAccountID: accountID,
+	}); err != nil {
+		s.mu.Lock()
+		pm.Status = prevStatus
+		s.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // IsUsable は指定の手段が決済に使えるかを確認する。

@@ -11,6 +11,8 @@ var (
 	ErrOverApplication = errors.New("入金額を超える充当はできません")
 	// ErrCurrencyMismatch は通貨不一致の充当を弾く。
 	ErrCurrencyMismatch = errors.New("通貨が一致しません")
+	// ErrInvalidAllocationAmount は 0 円以下の充当を弾く（applied の減算による不正状態を防ぐ）。
+	ErrInvalidAllocationAmount = errors.New("充当額は 1 円以上である必要があります")
 )
 
 // Allocation は 1 入金の一部を 1 請求へ充当した記録。
@@ -45,6 +47,9 @@ func NewBankDeposit(id shared.SettlementID, ref string, account shared.BillingAc
 
 // Allocate は入金の一部（または全部）を 1 請求へ充当する。過充当・通貨不一致は弾く。
 func (d *BankDeposit) Allocate(invoice shared.InvoiceID, amount shared.Money) error {
+	if amount.Amount <= 0 {
+		return ErrInvalidAllocationAmount
+	}
 	if amount.Currency != d.Amount.Currency {
 		return ErrCurrencyMismatch
 	}

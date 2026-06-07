@@ -32,19 +32,35 @@ func Match(deposit *BankDeposit, candidates []Candidate) (allocations []Allocati
 		return nil, false
 	}
 
-	// 1) 単一一致：候補のいずれかの残額が入金額と一致 → その請求へ全額充当。
+	// 1) 単一一致：残額が入金額と一致する候補がちょうど 1 件 → その請求へ全額充当。
+	//    同額候補が複数ある曖昧ケースは候補順に依存する誤消込になるため、自動消込せず手動へ回す。
+	var singles []Candidate
 	for _, c := range group {
 		if c.Outstanding.Currency == deposit.Amount.Currency && c.Outstanding.Amount == deposit.Amount.Amount {
-			return []Allocation{{Invoice: c.Invoice, Amount: c.Outstanding}}, true
+			singles = append(singles, c)
 		}
+	}
+	if len(singles) == 1 {
+		return []Allocation{{Invoice: singles[0].Invoice, Amount: singles[0].Outstanding}}, true
+	}
+	if len(singles) > 1 {
+		return nil, false // 曖昧なので手動へ
 	}
 
 	// 2) 団体一括：グループの残額合計が入金額と一致 → 各請求へ残額全額を按分。
-	var sum int64
+	//    通貨混在・オーバーフローは Money.Add で安全に検出し、異常なら手動へ倒す。
+	sum := shared.Money{Currency: deposit.Amount.Currency}
 	for _, c := range group {
-		sum += c.Outstanding.Amount
+		if c.Outstanding.Currency != deposit.Amount.Currency {
+			return nil, false
+		}
+		next, err := sum.Add(c.Outstanding)
+		if err != nil {
+			return nil, false
+		}
+		sum = next
 	}
-	if sum == deposit.Amount.Amount {
+	if sum.Amount == deposit.Amount.Amount {
 		allocs := make([]Allocation, 0, len(group))
 		for _, c := range group {
 			allocs = append(allocs, Allocation{Invoice: c.Invoice, Amount: c.Outstanding})

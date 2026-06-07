@@ -188,6 +188,18 @@ func TestService_ReconcileManuallyRejectsOverpay(t *testing.T) {
 	}
 }
 
+// 手動消込は通貨不一致を弾く。
+func TestService_ReconcileManuallyRejectsCurrencyMismatch(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	s := settlement.NewService(bus)
+
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+
+	if err := s.ReconcileManually(context.Background(), "INV-1", shared.Money{Amount: 3000, Currency: "USD"}); err == nil {
+		t.Error("通貨不一致の手動消込はエラーになるべき")
+	}
+}
+
 func mustPublish(t *testing.T, bus shared.EventBus, e shared.Event) {
 	t.Helper()
 	if err := bus.Publish(context.Background(), e); err != nil {

@@ -74,6 +74,30 @@ func TestMatch_UnmatchedOnAmountMismatch(t *testing.T) {
 	}
 }
 
+// 同額候補が複数ある曖昧ケースは自動消込せず matched=false（手動へ）。
+func TestMatch_UnmatchedOnAmbiguousSameAmount(t *testing.T) {
+	dep := NewBankDeposit("DEP-1", "REF-1", "BA-1", "協会", shared.JPY(3000))
+	cands := []Candidate{
+		{Invoice: "INV-1", Account: "BA-1", Outstanding: shared.JPY(3000)},
+		{Invoice: "INV-2", Account: "BA-1", Outstanding: shared.JPY(3000)},
+	}
+	if _, matched := Match(dep, cands); matched {
+		t.Error("同額候補が複数なら matched=false であるべき")
+	}
+}
+
+// 団体一括の候補に通貨混在がある場合は matched=false（誤合算を防ぐ）。
+func TestMatch_UnmatchedOnMixedCurrencies(t *testing.T) {
+	dep := NewBankDeposit("DEP-1", "REF-1", "BA-1", "協会", shared.JPY(5000))
+	cands := []Candidate{
+		{Invoice: "INV-1", Account: "BA-1", Outstanding: shared.JPY(2000)},
+		{Invoice: "INV-2", Account: "BA-1", Outstanding: shared.Money{Amount: 3000, Currency: "USD"}},
+	}
+	if _, matched := Match(dep, cands); matched {
+		t.Error("通貨混在のグループは matched=false であるべき")
+	}
+}
+
 // 該当する請求先が無い入金は matched=false。
 func TestMatch_UnmatchedOnNoCandidate(t *testing.T) {
 	dep := NewBankDeposit("DEP-1", "REF-1", "BA-X", "謎", shared.JPY(3000))

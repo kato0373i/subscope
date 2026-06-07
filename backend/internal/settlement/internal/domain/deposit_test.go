@@ -40,6 +40,17 @@ func TestBankDeposit_RejectsOverApplication(t *testing.T) {
 	}
 }
 
+// 0 円以下の充当は弾く（applied の減算による不正状態を防ぐ）。
+func TestBankDeposit_RejectsNonPositiveAmount(t *testing.T) {
+	d := NewBankDeposit("DEP-1", "REF-1", "BA-1", "ヤマダ", shared.JPY(3000))
+	if err := d.Allocate("INV-1", shared.JPY(0)); err != ErrInvalidAllocationAmount {
+		t.Errorf("0 円の充当は ErrInvalidAllocationAmount を返すべき: got %v", err)
+	}
+	if err := d.Allocate("INV-1", shared.JPY(-100)); err != ErrInvalidAllocationAmount {
+		t.Errorf("負数の充当は ErrInvalidAllocationAmount を返すべき: got %v", err)
+	}
+}
+
 func TestBankDeposit_RejectsCurrencyMismatch(t *testing.T) {
 	d := NewBankDeposit("DEP-1", "REF-1", "BA-1", "ヤマダ", shared.JPY(3000))
 	if err := d.Allocate("INV-1", shared.Money{Amount: 1000, Currency: "USD"}); err != ErrCurrencyMismatch {

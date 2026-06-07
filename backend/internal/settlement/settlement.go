@@ -25,6 +25,7 @@ type DepositInput struct {
 // PayerNameResolver は請求先 ID から登録名義を引く。名義ベースの自動照合に使う（任意）。
 type PayerNameResolver func(shared.BillingAccountID) string
 
+// Service は入金事実を債権へ適用し、消込の進捗をイベントで通知する。
 type Service struct {
 	bus         shared.EventBus
 	settlements map[shared.SettlementID]*domain.Settlement
@@ -40,6 +41,7 @@ type Service struct {
 	depSeq   int
 }
 
+// NewService は名義解決器なし（請求先 ID ベースの照合）のサービスを生成する。
 func NewService(bus shared.EventBus) *Service {
 	return NewServiceWithPayerNames(bus, nil)
 }
@@ -88,6 +90,17 @@ func (s *Service) onPaymentSucceeded(ctx context.Context, e shared.Event) error 
 	}
 	s.seen[ev.TransactionID] = true
 
+	// 投影がある場合は残額超過・通貨不一致を防御的に弾く（ReconcileManually と一貫させる）。
+	// クレカは通常 請求額＝入金額 だが、銀行入金で一部消込済みの請求に対する過消込を防ぐ。
+	if c, ok := s.outstanding[ev.InvoiceID]; ok {
+		if ev.Amount.Currency != c.Outstanding.Currency {
+			return domain.ErrCurrencyMismatch
+		}
+		if ev.Amount.Amount > c.Outstanding.Amount {
+			return domain.ErrOverApplication
+		}
+	}
+
 	s.seq++
 	st := domain.New(shared.SettlementID(fmt.Sprintf("STL-%04d", s.seq)), ev.InvoiceID, ev.Amount)
 	// 入金額の全額を債権へ充当する（過消込はドメインが弾く）。
@@ -108,7 +121,10 @@ func (s *Service) ImportBankDeposits(ctx context.Context, inputs []DepositInput)
 			log.Printf("[settlement] 重複入金を無視 ref=%s（冪等）", in.Reference)
 			continue
 		}
-		if in.Reference != "" {
+		if in.Reference == "" {
+			// 参照番号が無い入金は二重取込を検出できない（冪等性を保証しない）。
+			log.Printf("[settlement] 参照番号なし入金を処理 payer=%q amount=%s（冪等性なし・重複取込に注意）", in.PayerName, in.Amount)
+		} else {
 			s.seenRefs[in.Reference] = true
 		}
 
@@ -169,6 +185,8 @@ func (s *Service) applyToInvoice(ctx context.Context, invoice shared.InvoiceID, 
 		// 投影が無い（既に消込済み、または発行前のクレカ即時入金）。全額消込として扱う。
 		return s.bus.Publish(ctx, events.InvoicePaid{InvoiceID: invoice})
 	}
+	// NOTE: 残額を超える充当（過消込）に到達した場合も全額消込として扱う。
+	// 入口（ReconcileManually / onPaymentSucceeded）で過消込は弾いているため、通常ここは残額以内。
 	remaining := shared.Money{Amount: c.Outstanding.Amount - amount.Amount, Currency: c.Outstanding.Currency}
 	if remaining.Amount <= 0 {
 		delete(s.outstanding, invoice)

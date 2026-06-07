@@ -10,12 +10,14 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/billingaccount"
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/coupon"
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/member"
 	"github.com/kato0373i/subscope/backend/internal/notification"
 	"github.com/kato0373i/subscope/backend/internal/organization"
 	"github.com/kato0373i/subscope/backend/internal/payment"
 	"github.com/kato0373i/subscope/backend/internal/paymentmethod"
+	"github.com/kato0373i/subscope/backend/internal/plan"
 	"github.com/kato0373i/subscope/backend/internal/platform/eventbus"
 	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
@@ -29,6 +31,8 @@ func main() {
 	orgs := organization.NewService()
 	members := member.NewService()
 	accounts := billingaccount.NewService()
+	plans := plan.NewService()
+	coupons := coupon.NewService()
 	pms := paymentmethod.NewService(bus)
 	contracts := contract.NewService(bus)
 	_ = billing.NewService(bus)
@@ -75,6 +79,30 @@ func main() {
 	if err := pms.CompleteBankAccountRegistration(ctx, "PM-bank-transfer"); err != nil {
 		log.Fatalf("CompleteBankAccountRegistration: %v", err)
 	}
+
+	// デモ: 月会費プランとクーポンを登録し、割引適用を確認する。
+	price, err := plan.NewPrice(shared.JPY(3000), plan.IntervalMonthly)
+	if err != nil {
+		log.Fatalf("plan.NewPrice: %v", err)
+	}
+	if err := plans.Register("PLAN-0001", "ORG-0001", "月会費", price); err != nil {
+		log.Fatalf("plans.Register: %v", err)
+	}
+	if err := coupons.Register("CPN-0001", "ORG-0001", "WELCOME", coupon.DiscountPercent, 10, 100); err != nil {
+		log.Fatalf("coupons.Register: %v", err)
+	}
+	if err := coupons.Redeem("CPN-0001", "BA-0001"); err != nil {
+		log.Fatalf("coupons.Redeem: %v", err)
+	}
+	snapshot, err := plans.Snapshot("PLAN-0001")
+	if err != nil {
+		log.Fatalf("plans.Snapshot: %v", err)
+	}
+	discounted, err := coupons.Apply("CPN-0001", snapshot.Amount)
+	if err != nil {
+		log.Fatalf("coupons.Apply: %v", err)
+	}
+	log.Printf("[demo] クーポン適用: %s → %s", snapshot.Amount, discounted)
 
 	// デモ: 月会費 3,000 円の契約を登録する。
 	contracts.RegisterContract("CT-0001", "MEM-0001", "BA-0001", shared.JPY(3000))

@@ -33,6 +33,8 @@ subscope/
 │       ├── settlement/       # 入金・消込（銀行入金取込・部分消込・按分・名寄せ）
 │       ├── dunning/          # 督促（DunningCampaign / Step シーケンス）
 │       ├── notification/     # 通知（email/SMS/郵送・Sender ACL）
+│       ├── plan/             # プランマスタ（Plan / Price / BillingInterval・金額スナップショット）
+│       ├── coupon/           # クーポンマスタ（Coupon / Redemption・二重利用防止）
 │       ├── tax/              # 税（インボイス制度対応の税計算）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）

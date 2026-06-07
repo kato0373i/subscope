@@ -17,9 +17,9 @@ const (
 )
 
 var (
-	ErrEmptyCode        = errors.New("クーポンコードは必須です")
-	ErrInvalidValue     = errors.New("割引値が不正です")
-	ErrInvalidType      = errors.New("割引種別が不正です")
+	ErrEmptyCode       = errors.New("クーポンコードは必須です")
+	ErrInvalidValue    = errors.New("割引値が不正です")
+	ErrInvalidType     = errors.New("割引種別が不正です")
 	ErrAlreadyRedeemed = errors.New("この請求先は既にクーポンを利用済みです")
 	ErrRedemptionLimit = errors.New("クーポンの利用上限に達しました")
 )

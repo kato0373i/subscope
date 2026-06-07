@@ -17,6 +17,8 @@ const (
 	NameInvoicePaid                      = "settlement.InvoicePaid"
 	NameInvoicePartiallyPaid             = "settlement.InvoicePartiallyPaid"
 	NameUnmatchedDepositDetected         = "settlement.UnmatchedDepositDetected"
+	NameDunningStepTriggered             = "dunning.DunningStepTriggered"
+	NameNotificationSent                 = "notification.NotificationSent"
 	NamePaymentMethodRegistered          = "paymentmethod.PaymentMethodRegistered"
 	NameBankAccountRegistrationCompleted = "paymentmethod.BankAccountRegistrationCompleted"
 	NamePaymentMethodExpired             = "paymentmethod.PaymentMethodExpired"
@@ -146,6 +148,28 @@ type UnmatchedDepositDetected struct {
 }
 
 func (UnmatchedDepositDetected) EventName() string { return NameUnmatchedDepositDetected }
+
+// DunningStepTriggered は督促シーケンスの 1 ステップ発火。dunning が発行する。
+// notification が購読し、指定チャネル（email/SMS/郵送）で実際の送信を行う。
+type DunningStepTriggered struct {
+	CampaignID shared.DunningCampaignID
+	InvoiceID  shared.InvoiceID
+	Account    shared.BillingAccountID
+	Channel    string
+	StepNumber int
+}
+
+func (DunningStepTriggered) EventName() string { return NameDunningStepTriggered }
+
+// NotificationSent は通知の送信完了。notification が発行する。
+type NotificationSent struct {
+	NotificationID shared.NotificationID
+	InvoiceID      shared.InvoiceID
+	Account        shared.BillingAccountID
+	Channel        string
+}
+
+func (NotificationSent) EventName() string { return NameNotificationSent }
 
 // PaymentMethodRegistered は決済手段の登録完了。paymentmethod が発行する。
 type PaymentMethodRegistered struct {

@@ -77,6 +77,26 @@ func TestProration_AtPeriodEnd_NoAdjustment(t *testing.T) {
 	}
 }
 
+// 現在の請求期間より前の changeDate は弾く（前期間に属する変更の誤計算を防ぐ）。
+func TestProration_RejectsChangeDateBeforePeriod(t *testing.T) {
+	loc := time.UTC
+	c := &Contract{
+		MonthlyFee:      shared.JPY(3000),
+		BillingCycle:    CycleMonthly,
+		BillingAnchor:   BillingAnchor(1),
+		NextBillingDate: time.Date(2026, 7, 1, 0, 0, 0, 0, loc), // 期間: 6/1〜7/1
+		Status:          StatusActive,
+	}
+	// 5/20 は前期間 → 不正。
+	if _, err := (ProrationPolicy{}).Calculate(c, shared.JPY(5000), time.Date(2026, 5, 20, 0, 0, 0, 0, loc)); err != ErrInvalidPeriod {
+		t.Errorf("期間前の変更は ErrInvalidPeriod: got %v", err)
+	}
+	// 7/2 は次期間 → 不正。
+	if _, err := (ProrationPolicy{}).Calculate(c, shared.JPY(5000), time.Date(2026, 7, 2, 0, 0, 0, 0, loc)); err != ErrInvalidPeriod {
+		t.Errorf("期間後の変更は ErrInvalidPeriod: got %v", err)
+	}
+}
+
 // 通貨不一致は弾く。
 func TestProration_RejectsCurrencyMismatch(t *testing.T) {
 	loc := time.UTC

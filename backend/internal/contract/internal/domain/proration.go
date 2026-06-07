@@ -42,12 +42,12 @@ func (ProrationPolicy) Calculate(c *Contract, newFee shared.Money, changeDate ti
 	if daysInPeriod <= 0 {
 		return Adjustment{}, ErrInvalidPeriod
 	}
-	daysRemaining := daysBetween(changeDate, periodEnd)
-	if daysRemaining < 0 {
-		daysRemaining = 0
-	} else if daysRemaining > daysInPeriod {
-		daysRemaining = daysInPeriod
+	// changeDate は現在の請求期間 [periodStart, periodEnd] 内でなければならない。
+	// 期間外（前後の期間に属する）の変更を現在期間で日割りするのは誤りなので弾く。
+	if changeDate.Before(periodStart) || changeDate.After(periodEnd) {
+		return Adjustment{}, ErrInvalidPeriod
 	}
+	daysRemaining := daysBetween(changeDate, periodEnd)
 
 	credit := prorate(c.MonthlyFee, daysRemaining, daysInPeriod)
 	charge := prorate(newFee, daysRemaining, daysInPeriod)
@@ -62,9 +62,12 @@ func (ProrationPolicy) Calculate(c *Contract, newFee shared.Money, changeDate ti
 	}, nil
 }
 
-// daysBetween は from から to までの日数（24h 単位の切り捨て）。
+// daysBetween は from から to までの暦日数を返す。
+// 日付のみを UTC で正規化してから差を取ることで、DST（夏時間）切替日の 23/25 時間による誤差を排除する。
 func daysBetween(from, to time.Time) int {
-	return int(to.Sub(from).Hours() / 24)
+	fromDate := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	toDate := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+	return int(toDate.Sub(fromDate).Hours() / 24)
 }
 
 // prorate は fee の daysRemaining/daysInPeriod を端数切り捨てで返す。

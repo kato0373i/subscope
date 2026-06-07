@@ -101,6 +101,40 @@ func TestService_InvoicePaidStopsDunning(t *testing.T) {
 	}
 }
 
+// 投影より先にエスカレーションが来ても起票し、後から InvoiceIssued が到達すると
+// 以降のステップに請求先 ID が補完される（同期バスのネスト配信を想定した退行防止）。
+func TestService_UnprojectedIssuanceBackfillsAccount(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	s := dunning.NewService(bus)
+
+	var accounts []shared.BillingAccountID
+	var steps int
+	bus.Subscribe(events.NameDunningStepTriggered, func(_ context.Context, e shared.Event) error {
+		ev := e.(events.DunningStepTriggered)
+		accounts = append(accounts, ev.Account)
+		steps++
+		return nil
+	})
+
+	// 投影前にエスカレーション → email 起票（この時点では請求先 ID は空）。
+	mustPublish(t, bus, events.CollectionEscalated{CaseID: "CASE-1", InvoiceID: "INV-1", Amount: shared.JPY(3000)})
+	if steps != 1 || accounts[0] != "" {
+		t.Fatalf("起票時 steps=%d account=%q, want 1 と空", steps, accounts[0])
+	}
+
+	// 後から投影が到達 → 既存キャンペーンの請求先 ID を補完。
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+	// 次のステップ（sms）には補完済みの請求先 ID が載る。
+	mustAdvance(t, s, bus)
+
+	if len(accounts) != 2 {
+		t.Fatalf("steps = %d, want 2", len(accounts))
+	}
+	if accounts[1] != "BA-1" {
+		t.Errorf("補完後のステップ Account = %q, want BA-1", accounts[1])
+	}
+}
+
 func mustPublish(t *testing.T, bus shared.EventBus, e shared.Event) {
 	t.Helper()
 	if err := bus.Publish(context.Background(), e); err != nil {

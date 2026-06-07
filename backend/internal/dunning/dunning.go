@@ -60,6 +60,10 @@ func NewServiceWithSequence(bus shared.EventBus, steps []Step) *Service {
 func (s *Service) onInvoiceIssued(_ context.Context, e shared.Event) error {
 	ev := e.(events.InvoiceIssued)
 	s.accounts[ev.InvoiceID] = ev.BillingAccountID
+	// 起票が投影に先行していた場合、後から到達した請求先 ID で既存キャンペーンを補完する。
+	if c, ok := s.campaigns[ev.InvoiceID]; ok {
+		c.BackfillAccount(ev.BillingAccountID)
+	}
 	return nil
 }
 
@@ -89,8 +93,8 @@ func (s *Service) startCampaign(ctx context.Context, invoice shared.InvoiceID) e
 	}
 	account, ok := s.accounts[invoice]
 	if !ok {
-		// InvoiceIssued の投影が未到達でも督促は止めず起票する（請求先 ID は後段で補完する想定）。
-		// 同期インメモリバスのネスト配信では投影が後追いになり得るが、本番の非同期配信では先に確定する。
+		// InvoiceIssued の投影が未到達でも督促は止めず起票する。
+		// 後から投影が到達した時点で onInvoiceIssued が BackfillAccount で補完する。
 		log.Printf("[dunning] 警告: 請求先 ID 未投影のまま起票 invoice=%s", invoice)
 	}
 	s.seq++

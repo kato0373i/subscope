@@ -295,8 +295,10 @@ backend/
 ## 7. 先に決めておくべき論点
 
 - **CreditNote（赤伝/返金）**: Invoice とは別集約にするか、Invoice の負債行で表すか → インボイス制度的には**別文書（適格返還請求書）**推奨。
+  - ✅ **決定（#18）**: 独立集約 `creditnote.CreditNote` として実装。`issued → applied` の状態機械を持ち、元 `InvoiceID` を参照する。Invoice の不変条件（issued 後の明細変更不可）を壊さず、適格返還請求書として独立文書化できる。`contract.PlanChanged` の差額が負（ダウングレード返金）のとき自動発行し、解約返金等は手動 `Issue` で発行。`CreditNoteIssued` を発行する。
 - **冪等性**: PSP からの Webhook 二重通知に備え、payment / settlement に冪等キー必須。
 - **時刻と締め**: 請求の「締め日」概念（月末締め翌月請求）を Contract か billing のどちらに置くか。
+  - ✅ **決定（#18）**: **Contract に配置**。締め日は請求サイクル（`BillingCycle` / `BillingAnchor`）と同じく契約の請求スケジュール属性であり、billing は「締められた期間」を受けて請求する関係のため。`contract` ドメインに `ClosingPolicy`（締め日 VO・月末締め対応の `ClosingDate`）を実装した。
 
 ---
 

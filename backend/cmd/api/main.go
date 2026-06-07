@@ -11,6 +11,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
 	"github.com/kato0373i/subscope/backend/internal/coupon"
+	"github.com/kato0373i/subscope/backend/internal/creditnote"
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/member"
 	"github.com/kato0373i/subscope/backend/internal/notification"
@@ -41,6 +42,7 @@ func main() {
 	_ = settlement.NewService(bus)
 	_ = dunning.NewService(bus)
 	_ = notification.NewService(bus)
+	_ = creditnote.NewService(bus)
 
 	ctx := context.Background()
 

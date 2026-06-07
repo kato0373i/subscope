@@ -16,6 +16,7 @@ type (
 	DunningCampaignID string
 	NotificationID    string
 	CouponID          string
+	CreditNoteID      string
 )
 
 // IdempotencyKey は冪等性キー。PSP の Webhook 二重通知やイベント再送に備え、

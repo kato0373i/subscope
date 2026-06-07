@@ -19,6 +19,7 @@ const (
 	NamePaymentPending                   = "payment.PaymentPending"
 	NamePaymentFailed                    = "payment.PaymentFailed"
 	NameInvoicePaid                      = "settlement.InvoicePaid"
+	NameCreditNoteIssued                 = "creditnote.CreditNoteIssued"
 	NameInvoicePartiallyPaid             = "settlement.InvoicePartiallyPaid"
 	NameUnmatchedDepositDetected         = "settlement.UnmatchedDepositDetected"
 	NameDunningStepTriggered             = "dunning.DunningStepTriggered"
@@ -206,6 +207,17 @@ type NotificationSent struct {
 }
 
 func (NotificationSent) EventName() string { return NameNotificationSent }
+
+// CreditNoteIssued は赤伝（適格返還請求書＝CreditNote）の発行。creditnote が発行する。
+// 元 Invoice への返金・取消を表す独立文書。Amount は返金額（正の値）。
+type CreditNoteIssued struct {
+	CreditNoteID shared.CreditNoteID
+	ContractID   shared.ContractID
+	Amount       shared.Money
+	Reason       string
+}
+
+func (CreditNoteIssued) EventName() string { return NameCreditNoteIssued }
 
 // PaymentMethodRegistered は決済手段の登録完了。paymentmethod が発行する。
 type PaymentMethodRegistered struct {

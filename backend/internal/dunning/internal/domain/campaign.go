@@ -84,5 +84,15 @@ func (c *Campaign) Resolve() bool {
 	return true
 }
 
+// BackfillAccount は請求先 ID が未設定の場合のみ補完する。
+// 起票が請求先 ID の投影より先行した場合に、後から到達した投影で埋めるために使う。
+func (c *Campaign) BackfillAccount(account shared.BillingAccountID) bool {
+	if c.Account != "" || account == "" {
+		return false
+	}
+	c.Account = account
+	return true
+}
+
 // Triggered は実施済みステップ数。
 func (c *Campaign) Triggered() int { return c.triggered }

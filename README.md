@@ -26,7 +26,7 @@ subscope/
 ├── backend/
 │   ├── cmd/api/              # エントリポイント
 │   └── internal/
-│       ├── contract/         # 契約
+│       ├── contract/         # 契約（状態機械・トライアル・日割り proration）
 │       ├── billing/          # 請求（Invoice = 債権）
 │       ├── collection/       # 回収（リトライ/手段切替・貸倒・エスカレーション戦略）
 │       ├── payment/          # 決済実行（PaymentTransaction・PSP ACL・pending）

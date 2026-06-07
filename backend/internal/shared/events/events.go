@@ -6,6 +6,10 @@ import "github.com/kato0373i/subscope/backend/internal/shared"
 
 const (
 	NameBillingDue                       = "contract.BillingDue"
+	NameContractActivated                = "contract.ContractActivated"
+	NamePlanChanged                      = "contract.PlanChanged"
+	NameContractSuspended                = "contract.ContractSuspended"
+	NameContractCancelled                = "contract.ContractCancelled"
 	NameInvoiceIssued                    = "billing.InvoiceIssued"
 	NameChargeRequested                  = "collection.ChargeRequested"
 	NameCollectionEscalated              = "collection.CollectionEscalated"
@@ -33,6 +37,38 @@ type BillingDue struct {
 }
 
 func (BillingDue) EventName() string { return NameBillingDue }
+
+// ContractActivated はトライアル終了等で契約が有効化されたこと。contract が発行する。
+type ContractActivated struct {
+	ContractID shared.ContractID
+}
+
+func (ContractActivated) EventName() string { return NameContractActivated }
+
+// PlanChanged はプラン変更。contract が発行する。
+// NetAdjustment は日割り差額（正なら追加請求、負なら返金）。billing が調整明細を起票する。
+type PlanChanged struct {
+	ContractID    shared.ContractID
+	OldPlanID     shared.PlanID
+	NewPlanID     shared.PlanID
+	NetAdjustment shared.Money
+}
+
+func (PlanChanged) EventName() string { return NamePlanChanged }
+
+// ContractSuspended は契約の利用停止。contract が発行する。
+type ContractSuspended struct {
+	ContractID shared.ContractID
+}
+
+func (ContractSuspended) EventName() string { return NameContractSuspended }
+
+// ContractCancelled は契約の解約。contract が発行する。
+type ContractCancelled struct {
+	ContractID shared.ContractID
+}
+
+func (ContractCancelled) EventName() string { return NameContractCancelled }
 
 // InvoiceIssued は請求書（債権）の発行。billing が発行する。
 // 「いくら回収すべきか」だけを伝え、決済手段の情報は一切含まない。

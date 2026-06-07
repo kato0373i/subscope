@@ -2,6 +2,8 @@ package creditnote_test
 
 import (
 	"context"
+	"errors"
+	"math"
 	"testing"
 
 	"github.com/kato0373i/subscope/backend/internal/creditnote"
@@ -81,6 +83,26 @@ func TestService_RejectsInvalidAmount(t *testing.T) {
 	s := creditnote.NewService(bus)
 	if _, err := s.Issue(context.Background(), "CT-1", shared.JPY(0), "x"); err == nil {
 		t.Error("0 円の発行はエラーになるべき")
+	}
+}
+
+// 差額が math.MinInt64 のとき、符号反転のオーバーフローを検出してエラーを返す。
+func TestService_MinInt64OverflowDetected(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	_ = creditnote.NewService(bus)
+
+	var count int
+	bus.Subscribe(events.NameCreditNoteIssued, func(context.Context, shared.Event) error { count++; return nil })
+
+	err := bus.Publish(context.Background(), events.PlanChanged{
+		ContractID:    "CT-1",
+		NetAdjustment: shared.Money{Amount: math.MinInt64, Currency: "JPY"},
+	})
+	if !errors.Is(err, creditnote.ErrAmountOverflow) {
+		t.Errorf("math.MinInt64 のオーバーフローは ErrAmountOverflow: got %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CreditNoteIssued = %d, want 0（オーバーフロー時は発行しない）", count)
 	}
 }
 

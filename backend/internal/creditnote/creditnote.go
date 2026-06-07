@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 
 	"github.com/kato0373i/subscope/backend/internal/creditnote/internal/domain"
 	"github.com/kato0373i/subscope/backend/internal/shared"
@@ -16,6 +17,9 @@ import (
 
 // ErrNotFound は赤伝が見つからない場合に返る。
 var ErrNotFound = errors.New("赤伝が見つかりません")
+
+// ErrAmountOverflow は返金額の符号反転で int64 がオーバーフローする場合に返る。
+var ErrAmountOverflow = errors.New("返金額が int64 の範囲を超えています")
 
 type Service struct {
 	bus   shared.EventBus
@@ -35,6 +39,10 @@ func (s *Service) onPlanChanged(ctx context.Context, e shared.Event) error {
 	// 差額が負（返金）の場合のみ赤伝を発行する。追加請求（正）は対象外。
 	if !ev.NetAdjustment.IsNegative() {
 		return nil
+	}
+	// 符号反転は math.MinInt64 でオーバーフローする（円・int64 のガイドライン）。
+	if ev.NetAdjustment.Amount == math.MinInt64 {
+		return ErrAmountOverflow
 	}
 	refund := shared.Money{Amount: -ev.NetAdjustment.Amount, Currency: ev.NetAdjustment.Currency}
 	_, err := s.issue(ctx, ev.ContractID, refund, "plan_downgrade")

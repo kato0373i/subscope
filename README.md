@@ -30,7 +30,7 @@ subscope/
 │       ├── billing/          # 請求（Invoice = 債権）
 │       ├── collection/       # 回収（リトライ/手段切替・貸倒・エスカレーション戦略）
 │       ├── payment/          # 決済実行（PaymentTransaction・PSP ACL・pending）
-│       ├── settlement/       # 入金・消込
+│       ├── settlement/       # 入金・消込（銀行入金取込・部分消込・按分・名寄せ）
 │       ├── tax/              # 税（インボイス制度対応の税計算）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）

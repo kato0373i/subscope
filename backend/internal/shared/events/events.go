@@ -15,6 +15,8 @@ const (
 	NamePaymentPending                   = "payment.PaymentPending"
 	NamePaymentFailed                    = "payment.PaymentFailed"
 	NameInvoicePaid                      = "settlement.InvoicePaid"
+	NameInvoicePartiallyPaid             = "settlement.InvoicePartiallyPaid"
+	NameUnmatchedDepositDetected         = "settlement.UnmatchedDepositDetected"
 	NamePaymentMethodRegistered          = "paymentmethod.PaymentMethodRegistered"
 	NameBankAccountRegistrationCompleted = "paymentmethod.BankAccountRegistrationCompleted"
 	NamePaymentMethodExpired             = "paymentmethod.PaymentMethodExpired"
@@ -117,12 +119,33 @@ type CollectionWrittenOff struct {
 
 func (CollectionWrittenOff) EventName() string { return NameCollectionWrittenOff }
 
-// InvoicePaid は入金の消込完了。settlement が発行する。
+// InvoicePaid は入金の消込完了（全額充当）。settlement が発行する。
 type InvoicePaid struct {
 	InvoiceID shared.InvoiceID
 }
 
 func (InvoicePaid) EventName() string { return NameInvoicePaid }
+
+// InvoicePartiallyPaid は請求への部分消込。settlement が発行する。
+// 入金が請求額に満たない（または団体一括の一部充当）場合に発火し、RemainingAmount に残額を載せる。
+type InvoicePartiallyPaid struct {
+	InvoiceID       shared.InvoiceID
+	PaidAmount      shared.Money
+	RemainingAmount shared.Money
+}
+
+func (InvoicePartiallyPaid) EventName() string { return NameInvoicePartiallyPaid }
+
+// UnmatchedDepositDetected は自動消込できなかった入金。settlement が発行する。
+// 名義の揺れ・金額不一致・該当請求なしなどが原因で、手動消込（オペレータ対応）を要する。
+type UnmatchedDepositDetected struct {
+	Reference string
+	Account   shared.BillingAccountID
+	PayerName string
+	Amount    shared.Money
+}
+
+func (UnmatchedDepositDetected) EventName() string { return NameUnmatchedDepositDetected }
 
 // PaymentMethodRegistered は決済手段の登録完了。paymentmethod が発行する。
 type PaymentMethodRegistered struct {

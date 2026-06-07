@@ -26,7 +26,9 @@ func TestService_RegisterRedeemApply(t *testing.T) {
 
 func TestService_RejectsDuplicateAndDoubleRedeem(t *testing.T) {
 	s := coupon.NewService()
-	_ = s.Register("CPN-1", "ORG-1", "WELCOME", coupon.DiscountAmount, 500, 0)
+	if err := s.Register("CPN-1", "ORG-1", "WELCOME", coupon.DiscountAmount, 500, 0); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 
 	if err := s.Register("CPN-1", "ORG-1", "X", coupon.DiscountAmount, 100, 0); err != coupon.ErrDuplicateCoupon {
 		t.Errorf("重複登録は ErrDuplicateCoupon: got %v", err)

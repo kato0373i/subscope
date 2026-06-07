@@ -94,9 +94,15 @@ func main() {
 	if err := coupons.Redeem("CPN-0001", "BA-0001"); err != nil {
 		log.Fatalf("coupons.Redeem: %v", err)
 	}
-	snapshot, _ := plans.Snapshot("PLAN-0001")
-	discounted, _ := coupons.Apply("CPN-0001", snapshot.Amount)
-	log.Printf("[demo] プラン %s にクーポン適用: %s → %s", snapshot.Amount, snapshot.Amount, discounted)
+	snapshot, err := plans.Snapshot("PLAN-0001")
+	if err != nil {
+		log.Fatalf("plans.Snapshot: %v", err)
+	}
+	discounted, err := coupons.Apply("CPN-0001", snapshot.Amount)
+	if err != nil {
+		log.Fatalf("coupons.Apply: %v", err)
+	}
+	log.Printf("[demo] クーポン適用: %s → %s", snapshot.Amount, discounted)
 
 	// デモ: 月会費 3,000 円の契約を登録する。
 	contracts.RegisterContract("CT-0001", "MEM-0001", "BA-0001", shared.JPY(3000))

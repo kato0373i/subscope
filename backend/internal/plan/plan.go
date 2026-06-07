@@ -64,8 +64,7 @@ func (s *Service) ChangePrice(id shared.PlanID, price Price) error {
 	if !ok {
 		return ErrNotFound
 	}
-	p.ChangePrice(price)
-	return nil
+	return p.ChangePrice(price)
 }
 
 // Snapshot は Invoice へ焼き込むための現在価格スナップショットを返す。

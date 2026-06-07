@@ -38,12 +38,32 @@ func TestSnapshot_IsIndependentOfLaterPriceChange(t *testing.T) {
 	}
 	snap := p.Snapshot()
 
-	p.ChangePrice(mustPrice(t, shared.JPY(5000), IntervalMonthly))
+	if err := p.ChangePrice(mustPrice(t, shared.JPY(5000), IntervalMonthly)); err != nil {
+		t.Fatalf("ChangePrice: %v", err)
+	}
 
 	if snap.Amount.Amount != 3000 {
 		t.Errorf("スナップショット = %d, want 3000（改定の影響を受けない）", snap.Amount.Amount)
 	}
 	if p.Price().Amount.Amount != 5000 {
 		t.Errorf("改定後の現在価格 = %d, want 5000", p.Price().Amount.Amount)
+	}
+}
+
+// ChangePrice は NewPrice を経由せず構築された不正な Price を弾く（集約不変条件の防衛）。
+func TestChangePrice_RejectsInvalidPrice(t *testing.T) {
+	p, err := New("PLAN-1", "ORG-1", "月会費", mustPrice(t, shared.JPY(3000), IntervalMonthly))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := p.ChangePrice(Price{Amount: shared.JPY(-100), Interval: IntervalMonthly}); err != ErrNonPositivePrice {
+		t.Errorf("負の金額は ErrNonPositivePrice: got %v", err)
+	}
+	if err := p.ChangePrice(Price{Amount: shared.JPY(1000), Interval: "weekly"}); err != ErrInvalidInterval {
+		t.Errorf("不正な周期は ErrInvalidInterval: got %v", err)
+	}
+	// 不正な改定は反映されない。
+	if p.Price().Amount.Amount != 3000 {
+		t.Errorf("価格 = %d, want 3000（不正改定は反映しない）", p.Price().Amount.Amount)
 	}
 }

@@ -64,7 +64,17 @@ func New(id shared.PlanID, orgID shared.OrgID, name string, price Price) (*Plan,
 func (p *Plan) Price() Price { return p.price }
 
 // ChangePrice はプラン価格を改定する。既に発行済の Invoice はスナップショットを保持するため影響を受けない。
-func (p *Plan) ChangePrice(price Price) { p.price = price }
+// Price のフィールドは公開されており NewPrice を経由しない構築が可能なため、ここでも不変条件を検証する。
+func (p *Plan) ChangePrice(price Price) error {
+	if price.Amount.Amount <= 0 {
+		return ErrNonPositivePrice
+	}
+	if !price.Interval.valid() {
+		return ErrInvalidInterval
+	}
+	p.price = price
+	return nil
+}
 
 // Snapshot は Invoice へ焼き込むための現在価格のスナップショットを返す。
 // Price は値型のため、返した値は以降のプラン改定から独立している。

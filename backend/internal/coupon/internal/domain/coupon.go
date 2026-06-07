@@ -90,7 +90,9 @@ func (c *Coupon) Apply(amount shared.Money) (shared.Money, error) {
 	case DiscountAmount:
 		discount = c.value
 	case DiscountPercent:
-		discount = amount.Amount * c.value / 100
+		// 中間乗算 amount.Amount*c.value の int64 オーバーフローを避けるため、除算を先に行う。
+		// floor(amount*value/100) と等価。
+		discount = (amount.Amount/100)*c.value + (amount.Amount%100)*c.value/100
 	default:
 		return shared.Money{}, ErrInvalidType
 	}

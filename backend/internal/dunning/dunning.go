@@ -6,6 +6,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -86,10 +87,16 @@ func (s *Service) startCampaign(ctx context.Context, invoice shared.InvoiceID) e
 	if _, ok := s.campaigns[invoice]; ok {
 		return nil
 	}
+	account, ok := s.accounts[invoice]
+	if !ok {
+		// InvoiceIssued の投影が未到達でも督促は止めず起票する（請求先 ID は後段で補完する想定）。
+		// 同期インメモリバスのネスト配信では投影が後追いになり得るが、本番の非同期配信では先に確定する。
+		log.Printf("[dunning] 警告: 請求先 ID 未投影のまま起票 invoice=%s", invoice)
+	}
 	s.seq++
 	c := domain.NewCampaign(
 		shared.DunningCampaignID(fmt.Sprintf("DUN-%04d", s.seq)),
-		invoice, s.accounts[invoice], s.steps,
+		invoice, account, s.steps,
 	)
 	s.campaigns[invoice] = c
 	log.Printf("[dunning] 督促を起票 campaign=%s invoice=%s", c.ID, invoice)
@@ -98,13 +105,15 @@ func (s *Service) startCampaign(ctx context.Context, invoice shared.InvoiceID) e
 
 // AdvanceCampaigns は進行中の全キャンペーンの次ステップを 1 つ発火する。
 // 時間経過で次の督促段階に進めるスケジューラのティックを表す。
+// 1 件のエラーで中断せず全件処理し、エラーは集約して返す。
 func (s *Service) AdvanceCampaigns(ctx context.Context) error {
+	var errs []error
 	for _, c := range s.campaigns {
 		if err := s.triggerNext(ctx, c); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // triggerNext はキャンペーンの次ステップを発火し DunningStepTriggered を発行する。

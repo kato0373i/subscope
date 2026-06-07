@@ -44,6 +44,7 @@ func TestService_DoesNotDuplicateCampaign(t *testing.T) {
 	var steps int
 	bus.Subscribe(events.NameDunningStepTriggered, func(context.Context, shared.Event) error { steps++; return nil })
 
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
 	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", PaymentMethodID: "PM-card-primary", Reason: "x"})
 	mustPublish(t, bus, events.PaymentFailed{InvoiceID: "INV-1", PaymentMethodID: "PM-card-secondary", Reason: "x"})
 	mustPublish(t, bus, events.CollectionEscalated{CaseID: "CASE-1", InvoiceID: "INV-1", Amount: shared.JPY(3000)})
@@ -64,6 +65,7 @@ func TestService_AdvanceCampaignsRunsSequence(t *testing.T) {
 		return nil
 	})
 
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
 	mustPublish(t, bus, events.CollectionEscalated{CaseID: "CASE-1", InvoiceID: "INV-1", Amount: shared.JPY(3000)})
 	// 起票で email、以降 2 回の Advance で sms・letter。
 	mustAdvance(t, s, bus)
@@ -89,6 +91,7 @@ func TestService_InvoicePaidStopsDunning(t *testing.T) {
 	var steps int
 	bus.Subscribe(events.NameDunningStepTriggered, func(context.Context, shared.Event) error { steps++; return nil })
 
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
 	mustPublish(t, bus, events.CollectionEscalated{CaseID: "CASE-1", InvoiceID: "INV-1", Amount: shared.JPY(3000)})
 	mustPublish(t, bus, events.InvoicePaid{InvoiceID: "INV-1"})
 	mustAdvance(t, s, bus)

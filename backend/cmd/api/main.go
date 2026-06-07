@@ -10,7 +10,9 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/billingaccount"
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/member"
+	"github.com/kato0373i/subscope/backend/internal/notification"
 	"github.com/kato0373i/subscope/backend/internal/organization"
 	"github.com/kato0373i/subscope/backend/internal/payment"
 	"github.com/kato0373i/subscope/backend/internal/paymentmethod"
@@ -33,6 +35,8 @@ func main() {
 	_ = collection.NewService(bus)
 	_ = payment.NewService(bus)
 	_ = settlement.NewService(bus)
+	_ = dunning.NewService(bus)
+	_ = notification.NewService(bus)
 
 	ctx := context.Background()
 

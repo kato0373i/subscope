@@ -3,16 +3,18 @@ package shared
 // モジュール間の参照はすべてこの型付き ID 経由で行う。
 // 他モジュールの集約（構造体）を直接 import することは禁止。
 type (
-	OrgID            string
-	MemberID         string
-	BillingAccountID string
-	ContractID       string
-	PlanID           string
-	InvoiceID        string
-	PaymentMethodID  string
-	TransactionID    string
-	CollectionCaseID string
-	SettlementID     string
+	OrgID             string
+	MemberID          string
+	BillingAccountID  string
+	ContractID        string
+	PlanID            string
+	InvoiceID         string
+	PaymentMethodID   string
+	TransactionID     string
+	CollectionCaseID  string
+	SettlementID      string
+	DunningCampaignID string
+	NotificationID    string
 )
 
 // IdempotencyKey は冪等性キー。PSP の Webhook 二重通知やイベント再送に備え、

@@ -218,9 +218,15 @@ CollectionStrategy {
 | **plan** | `Plan`, `Price`(VO), `BillingInterval` | カタログ。発行済 Invoice には金額をスナップショット |
 | **coupon** | `Coupon`, `Redemption`(E) | 初回無料・n ヶ月割引。billing が適用、二重利用を redemption で防止 |
 | **metrics** | 読み取り専用の投影（MRR/ARR/Churn/LTV） | **書き込み集約ではなく CQRS の Read Model**。各イベントを集計 |
-| **audit** | `AuditLog`（追記専用） | 金融性が高いので全コマンドを記録。不変 |
+| **audit** | `AuditLog`（追記専用） | 金融性が高いので全統合イベントを記録（`events.AllNames()` を購読し `Entry` として追記）。不変 |
 | **webhook** | `WebhookEndpoint`, `Delivery`(E) | 会計ソフト連携・Slack 通知。配信リトライを持つ |
 | **notification** | メール/SMS 送信の実体 | dunning から駆動される下位サービス |
+
+> ✅ **実装（#19）**: metrics / audit / webhook を最小スライスで新設。
+> - **metrics**: `Projection`（Read Model）が `ContractActivated/Cancelled`・`InvoiceIssued/Paid`・`CollectionRecovered/WrittenOff`・`CreditNoteIssued` を購読集計し、`Snapshot()` で現在値を返す。書き込み集約ではなくイベント集計のみ。
+> - **audit**: `events.AllNames()` で全統合イベントを購読し、`Entry`（不変・追記専用）として記録。フィールド変更メソッドを持たない。
+> - **webhook**: `Endpoint`（購読イベント集合）と `Delivery`（pending→delivered/failed の状態機械）。配信は `Transport` ACL に閉じ込め、失敗時は上限までリトライ。配信失敗はバスを止めず記録に残す。
+> - いずれも新たな統合イベントは発行しない（純粋な観測・連携の下流）。送信/配信の実体は ACL（`Transport`）に隔離し既定はモック。
 
 ---
 

@@ -85,4 +85,11 @@ func TestProjection_RejectsMixedCurrency(t *testing.T) {
 	if err := p.OnInvoiceIssued(shared.Money{Amount: 10, Currency: "USD"}); err == nil {
 		t.Error("通貨不一致はエラーになるべき")
 	}
+	// 失敗時は件数・総額のいずれも更新されない（原子性）。
+	if p.InvoicesIssued != 1 {
+		t.Errorf("InvoicesIssued = %d, want 1（失敗時は増えない）", p.InvoicesIssued)
+	}
+	if p.BilledTotal.Amount != 1000 {
+		t.Errorf("BilledTotal = %d, want 1000（失敗時は加算されない）", p.BilledTotal.Amount)
+	}
 }

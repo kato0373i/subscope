@@ -16,7 +16,6 @@ func TestService_RecordsEveryPublishedEvent(t *testing.T) {
 	at := time.Date(2026, time.June, 8, 0, 0, 0, 0, time.UTC)
 	s := audit.NewServiceWithClock(bus, func() time.Time { return at })
 
-	ctx := context.Background()
 	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
 	mustPublish(t, bus, events.InvoicePaid{InvoiceID: "INV-1"})
 
@@ -33,19 +32,25 @@ func TestService_RecordsEveryPublishedEvent(t *testing.T) {
 	if !entries[0].RecordedAt().Equal(at) {
 		t.Errorf("RecordedAt = %v, want %v", entries[0].RecordedAt(), at)
 	}
-	_ = ctx
 }
 
-// Entries は内部スライスのコピーを返し、呼び出し側からの改変が記録に波及しない。
+// Entries は内部スライスのコピーを返し、取得後の追記が既存の取得結果に波及しない。
 func TestService_EntriesReturnsCopy(t *testing.T) {
 	bus := eventbus.NewInMemory()
 	s := audit.NewService(bus)
 	mustPublish(t, bus, events.InvoicePaid{InvoiceID: "INV-1"})
 
 	got := s.Entries()
-	got = append(got, got...) // ローカルコピーを破壊
-	if s.Len() != 1 {
-		t.Errorf("記録件数 = %d, want 1（内部状態は不変）", s.Len())
+	if len(got) != 1 {
+		t.Fatalf("取得件数 = %d, want 1", len(got))
+	}
+	// さらに記録しても、先に取得したスライスは長さ 1 のまま（独立したコピー）。
+	mustPublish(t, bus, events.InvoicePaid{InvoiceID: "INV-2"})
+	if len(got) != 1 {
+		t.Errorf("取得済みスライス長 = %d, want 1（コピーは不変）", len(got))
+	}
+	if s.Len() != 2 {
+		t.Errorf("記録件数 = %d, want 2", s.Len())
 	}
 }
 

@@ -33,13 +33,13 @@ func NewService(bus shared.EventBus) *Service {
 	return s
 }
 
-func (s *Service) onContractActivated(_ context.Context, _ shared.Event) error {
-	s.projection.OnContractActivated()
+func (s *Service) onContractActivated(_ context.Context, e shared.Event) error {
+	s.projection.OnContractActivated(e.(events.ContractActivated).ContractID)
 	return nil
 }
 
-func (s *Service) onContractCancelled(_ context.Context, _ shared.Event) error {
-	s.projection.OnContractCancelled()
+func (s *Service) onContractCancelled(_ context.Context, e shared.Event) error {
+	s.projection.OnContractCancelled(e.(events.ContractCancelled).ContractID)
 	return nil
 }
 

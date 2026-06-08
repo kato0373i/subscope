@@ -9,15 +9,36 @@ import (
 func TestProjection_AggregatesLifecycle(t *testing.T) {
 	var p Projection
 
-	p.OnContractActivated()
-	p.OnContractActivated()
-	p.OnContractCancelled() // 1 件解約
+	p.OnContractActivated("CT-1")
+	p.OnContractActivated("CT-2")
+	p.OnContractCancelled("CT-1") // 1 件解約
 
 	if p.ActiveContracts != 1 {
 		t.Errorf("ActiveContracts = %d, want 1", p.ActiveContracts)
 	}
 	if p.ChurnedContracts != 1 {
 		t.Errorf("ChurnedContracts = %d, want 1", p.ChurnedContracts)
+	}
+}
+
+// 重複 Activated・未在籍/重複 Cancelled でも ActiveContracts が壊れない（負値にならない）。
+func TestProjection_ContractTransitionsAreIdempotent(t *testing.T) {
+	var p Projection
+
+	p.OnContractActivated("CT-1")
+	p.OnContractActivated("CT-1") // 重複 → 二重計上しない
+	if p.ActiveContracts != 1 {
+		t.Errorf("重複 Activated 後 ActiveContracts = %d, want 1", p.ActiveContracts)
+	}
+
+	p.OnContractCancelled("CT-1")
+	p.OnContractCancelled("CT-1")       // 重複取消 → no-op
+	p.OnContractCancelled("CT-UNKNOWN") // 未在籍の取消 → no-op
+	if p.ActiveContracts != 0 {
+		t.Errorf("ActiveContracts = %d, want 0（負値にならない）", p.ActiveContracts)
+	}
+	if p.ChurnedContracts != 1 {
+		t.Errorf("ChurnedContracts = %d, want 1（解約は 1 回だけ計上）", p.ChurnedContracts)
 	}
 }
 

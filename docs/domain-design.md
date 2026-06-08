@@ -218,7 +218,7 @@ CollectionStrategy {
 | **plan** | `Plan`, `Price`(VO), `BillingInterval` | カタログ。発行済 Invoice には金額をスナップショット |
 | **coupon** | `Coupon`, `Redemption`(E) | 初回無料・n ヶ月割引。billing が適用、二重利用を redemption で防止 |
 | **metrics** | 読み取り専用の投影（MRR/ARR/Churn/LTV） | **書き込み集約ではなく CQRS の Read Model**。各イベントを集計 |
-| **audit** | `AuditLog`（追記専用） | 金融性が高いので全コマンドを記録。不変 |
+| **audit** | `AuditLog`（追記専用） | 金融性が高いので全統合イベントを記録（`events.AllNames()` を購読し `Entry` として追記）。不変 |
 | **webhook** | `WebhookEndpoint`, `Delivery`(E) | 会計ソフト連携・Slack 通知。配信リトライを持つ |
 | **notification** | メール/SMS 送信の実体 | dunning から駆動される下位サービス |
 

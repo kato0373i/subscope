@@ -103,6 +103,15 @@ func (s *Service) attempt(ctx context.Context, ep *domain.Endpoint, d *Delivery,
 }
 
 // Deliveries は配信記録をコピーして返す（読み取り専用の投影）。
+// 要素も値複製し、呼び出し側からの改変が Service 内部状態に波及しないようにする。
 func (s *Service) Deliveries() []*Delivery {
-	return append([]*Delivery(nil), s.deliveries...)
+	out := make([]*Delivery, 0, len(s.deliveries))
+	for _, d := range s.deliveries {
+		if d == nil {
+			continue
+		}
+		cp := *d
+		out = append(out, &cp)
+	}
+	return out
 }

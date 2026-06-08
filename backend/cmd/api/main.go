@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/kato0373i/subscope/backend/internal/audit"
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/billingaccount"
 	"github.com/kato0373i/subscope/backend/internal/collection"
@@ -14,6 +15,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/creditnote"
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/member"
+	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/notification"
 	"github.com/kato0373i/subscope/backend/internal/organization"
 	"github.com/kato0373i/subscope/backend/internal/payment"
@@ -22,6 +24,8 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/platform/eventbus"
 	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
+	"github.com/kato0373i/subscope/backend/internal/shared/events"
+	"github.com/kato0373i/subscope/backend/internal/webhook"
 )
 
 func main() {
@@ -43,6 +47,12 @@ func main() {
 	_ = dunning.NewService(bus)
 	_ = notification.NewService(bus)
 	_ = creditnote.NewService(bus)
+
+	// 支援モジュール: 監査ログ・指標投影・外部連携（全イベントを横断購読）。
+	auditLog := audit.NewService(bus)
+	mtr := metrics.NewService(bus)
+	hooks := webhook.NewService(bus)
+	hooks.RegisterEndpoint("WE-accounting", "https://example.test/accounting", events.NameInvoiceIssued, events.NameInvoicePaid)
 
 	ctx := context.Background()
 
@@ -114,4 +124,10 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 	log.Println("=== 完了 ===")
+
+	// デモ: 支援モジュールが横断的に観測した結果を表示する。
+	snap := mtr.Snapshot()
+	log.Printf("[demo][metrics] 請求 %d 件 / 請求総額 %s", snap.InvoicesIssued, snap.BilledTotal)
+	log.Printf("[demo][audit] 監査ログ %d 件を記録", auditLog.Len())
+	log.Printf("[demo][webhook] 配信記録 %d 件", len(hooks.Deliveries()))
 }

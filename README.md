@@ -37,6 +37,9 @@ subscope/
 │       ├── coupon/           # クーポンマスタ（Coupon / Redemption・二重利用防止）
 │       ├── creditnote/        # 赤伝（適格返還請求書・返金）
 │       ├── tax/              # 税（インボイス制度対応の税計算）
+│       ├── metrics/          # 指標投影（CQRS Read Model：請求/回収/解約をイベント集計）
+│       ├── audit/            # 監査ログ（全統合イベントを追記専用・不変で記録）
+│       ├── webhook/          # 外部連携（WebhookEndpoint / Delivery・配信リトライ）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）
 └── frontend/                 # React アプリ（予定）

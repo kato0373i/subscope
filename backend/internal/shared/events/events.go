@@ -29,6 +29,36 @@ const (
 	NamePaymentMethodExpired             = "paymentmethod.PaymentMethodExpired"
 )
 
+// AllNames はすべての統合イベント名を返す。audit / webhook のように
+// 全イベントを横断して購読するモジュールが利用する。
+// 新しい統合イベントを追加したらここにも追記する。
+func AllNames() []string {
+	return []string{
+		NameBillingDue,
+		NameContractActivated,
+		NamePlanChanged,
+		NameContractSuspended,
+		NameContractCancelled,
+		NameInvoiceIssued,
+		NameChargeRequested,
+		NameCollectionEscalated,
+		NameCollectionRecovered,
+		NameCollectionWrittenOff,
+		NamePaymentSucceeded,
+		NamePaymentPending,
+		NamePaymentFailed,
+		NameInvoicePaid,
+		NameCreditNoteIssued,
+		NameInvoicePartiallyPaid,
+		NameUnmatchedDepositDetected,
+		NameDunningStepTriggered,
+		NameNotificationSent,
+		NamePaymentMethodRegistered,
+		NameBankAccountRegistrationCompleted,
+		NamePaymentMethodExpired,
+	}
+}
+
 // BillingDue は契約の請求サイクル到来。contract が発行する。
 type BillingDue struct {
 	ContractID       shared.ContractID

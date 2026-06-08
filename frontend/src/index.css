@@ -1,0 +1,14 @@
+:root {
+  font-family: system-ui, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  line-height: 1.5;
+  color: #1f2933;
+  background-color: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

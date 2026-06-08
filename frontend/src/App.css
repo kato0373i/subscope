@@ -1,0 +1,99 @@
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+.app__header {
+  margin-bottom: 1.5rem;
+}
+
+.app__header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.app__subtitle {
+  margin: 0.25rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #eef1f4;
+}
+
+th {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  color: #9b1c1c;
+  background: #fde8e8;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: #eef1f4;
+  color: #3e4c59;
+}
+
+.badge--active,
+.badge--paid {
+  background: #def7ec;
+  color: #03543f;
+}
+
+.badge--past_due,
+.badge--in_collection {
+  background: #fde8e8;
+  color: #9b1c1c;
+}
+
+.badge--trialing,
+.badge--issued,
+.badge--partially_paid {
+  background: #e1effe;
+  color: #1e429f;
+}
+
+.badge--suspended,
+.badge--cancelled,
+.badge--written_off {
+  background: #f3f4f6;
+  color: #6b7280;
+}

@@ -42,7 +42,10 @@ subscope/
 │       ├── webhook/          # 外部連携（WebhookEndpoint / Delivery・配信リトライ）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）
-└── frontend/                 # React アプリ（予定）
+└── frontend/                 # 管理画面（React + TypeScript + Vite）
+    └── src/
+        ├── App.tsx           # 画面（契約一覧・請求/回収状況）
+        └── api/              # SubscopeApi 抽象 + MockApi（接続方針は frontend/README）
 ```
 
 各モジュールは公開パッケージ（`internal/<module>/`）のみを外部に晒し、エンティティは

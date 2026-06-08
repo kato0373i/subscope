@@ -12,17 +12,22 @@ function App() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [collections, setCollections] = useState<CollectionState[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.listContracts(), api.listCollectionStates()]).then(
-      ([c, s]) => {
+    Promise.all([api.listContracts(), api.listCollectionStates()])
+      .then(([c, s]) => {
         if (!active) return;
         setContracts(c);
         setCollections(s);
         setLoading(false);
-      },
-    );
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "データの取得に失敗しました");
+        setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -37,6 +42,8 @@ function App() {
 
       {loading ? (
         <p>読み込み中…</p>
+      ) : error ? (
+        <p className="error">エラー: {error}</p>
       ) : (
         <>
           <section className="card">

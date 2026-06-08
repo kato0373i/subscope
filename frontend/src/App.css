@@ -56,6 +56,13 @@ td.num {
   font-variant-numeric: tabular-nums;
 }
 
+.error {
+  color: #9b1c1c;
+  background: #fde8e8;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+}
+
 .badge {
   display: inline-block;
   padding: 0.1rem 0.55rem;

@@ -13,7 +13,7 @@ npm run lint     # ESLint
 
 ## 構成
 
-```
+```text
 frontend/
 ├── index.html
 ├── src/

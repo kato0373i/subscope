@@ -35,6 +35,7 @@ subscope/
 │       ├── notification/     # 通知（email/SMS/郵送・Sender ACL）
 │       ├── plan/             # プランマスタ（Plan / Price / BillingInterval・金額スナップショット）
 │       ├── coupon/           # クーポンマスタ（Coupon / Redemption・二重利用防止）
+│       ├── creditnote/        # 赤伝（適格返還請求書・返金）
 │       ├── tax/              # 税（インボイス制度対応の税計算）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
 │       └── platform/         # インフラ実装（イベントバス等）

@@ -14,6 +14,7 @@ function svgProps(size: number) {
     strokeWidth: 1.8,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
+    "aria-hidden": true, // 装飾アイコン（ラベルは親コンポーネントが提供）
   };
 }
 

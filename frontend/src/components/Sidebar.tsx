@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { View } from "../views";
 import { IconCollection, IconContract, IconDashboard } from "./icons";
 
@@ -6,7 +7,7 @@ interface Props {
   onChange: (view: View) => void;
 }
 
-const items: { key: View; label: string; icon: React.ReactNode }[] = [
+const items: { key: View; label: string; icon: ReactNode }[] = [
   { key: "dashboard", label: "ダッシュボード", icon: <IconDashboard /> },
   { key: "contracts", label: "契約", icon: <IconContract /> },
   { key: "collections", label: "請求・回収", icon: <IconCollection /> },

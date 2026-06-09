@@ -36,6 +36,27 @@ const mockContracts: Contract[] = [
     monthlyFee: jpy(3000),
     status: "past_due",
   },
+  {
+    id: "CT-0004",
+    memberName: "高橋 美咲",
+    billingAccountId: "BA-0004",
+    monthlyFee: jpy(8000),
+    status: "active",
+  },
+  {
+    id: "CT-0005",
+    memberName: "田中 健",
+    billingAccountId: "BA-0005",
+    monthlyFee: jpy(3000),
+    status: "suspended",
+  },
+  {
+    id: "CT-0006",
+    memberName: "渡辺 さくら",
+    billingAccountId: "BA-0006",
+    monthlyFee: jpy(12000),
+    status: "active",
+  },
 ];
 
 const mockCollectionStates: CollectionState[] = [
@@ -56,6 +77,24 @@ const mockCollectionStates: CollectionState[] = [
     contractId: "CT-0002",
     amount: jpy(5000),
     status: "issued",
+  },
+  {
+    invoiceId: "INV-0004",
+    contractId: "CT-0004",
+    amount: jpy(8000),
+    status: "paid",
+  },
+  {
+    invoiceId: "INV-0005",
+    contractId: "CT-0006",
+    amount: jpy(12000),
+    status: "partially_paid",
+  },
+  {
+    invoiceId: "INV-0006",
+    contractId: "CT-0005",
+    amount: jpy(3000),
+    status: "written_off",
   },
 ];
 

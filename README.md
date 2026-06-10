@@ -26,7 +26,7 @@ subscope/
 ├── backend/
 │   ├── cmd/api/              # エントリポイント
 │   └── internal/
-│       ├── contract/         # 契約（状態機械・トライアル・日割り proration）
+│       ├── contract/         # 契約（状態機械・トライアル・日割り proration・Billing Run 自動起票）
 │       ├── billing/          # 請求（Invoice = 債権）
 │       ├── collection/       # 回収（リトライ/手段切替・貸倒・エスカレーション戦略）
 │       ├── payment/          # 決済実行（PaymentTransaction・PSP ACL・pending）
@@ -77,7 +77,8 @@ go run ./cmd/api
 | `GET /healthz` | ヘルスチェック |
 | `GET /api/contracts` | 契約一覧 |
 | `POST /api/contracts` | 契約登録（コマンド） |
-| `POST /api/contracts/{id}/billing` | 請求トリガ（コマンド） |
+| `POST /api/contracts/{id}/billing` | 単一契約の請求トリガ（コマンド） |
+| `POST /api/billing-runs` | 定期請求の自動起票（Billing Run）。`{asOf, dryRun}` で対象抽出・ドライラン可（コマンド） |
 | `GET /api/invoices` | 請求書一覧 |
 | `GET /api/collection-states` | 請求/回収状況（billing × collection を合成） |
 | `GET /api/metrics` | 指標スナップショット |

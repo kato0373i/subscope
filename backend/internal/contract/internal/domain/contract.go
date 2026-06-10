@@ -165,6 +165,19 @@ func (c *Contract) IsBillable() bool {
 	return c.Status == StatusActive || c.Status == StatusPastDue
 }
 
+// IsDue は asOf 時点で請求サイクルが到来しているか。
+// 課金対象（active / past_due）かつ次回請求日が asOf 以前のときに true。
+// Billing Run の対象抽出に使う。決済手段は一切判定材料にしない（債権≠決済手段）。
+func (c *Contract) IsDue(asOf time.Time) bool {
+	return c.IsBillable() && !c.NextBillingDate.After(asOf)
+}
+
+// CurrentBillingPeriod は現在の請求対象期間（次回請求日の年月、YYYY-MM）を返す。
+// 冪等性キーの構成要素であり、BillingDue.Period に載る期間でもある。
+func (c *Contract) CurrentBillingPeriod() string {
+	return c.NextBillingDate.Format("2006-01")
+}
+
 // AdvanceBillingDate は請求発行後に次回請求日を進める。
 func (c *Contract) AdvanceBillingDate() {
 	c.NextBillingDate = c.calcNextBillingDate(c.NextBillingDate)

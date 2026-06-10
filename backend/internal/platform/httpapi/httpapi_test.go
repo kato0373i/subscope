@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/collection"
@@ -23,6 +24,9 @@ type stubContracts struct {
 	registered []shared.ContractID
 	triggered  []shared.ContractID
 	triggerErr error
+	runResult  contract.BillingRunResult
+	runAsOf    time.Time
+	runDryRun  bool
 }
 
 func (s *stubContracts) List() []contract.ContractView { return s.views }
@@ -32,6 +36,11 @@ func (s *stubContracts) RegisterContract(id shared.ContractID, _ shared.MemberID
 func (s *stubContracts) TriggerBilling(_ context.Context, id shared.ContractID) error {
 	s.triggered = append(s.triggered, id)
 	return s.triggerErr
+}
+func (s *stubContracts) RunBilling(_ context.Context, asOf time.Time, dryRun bool) (contract.BillingRunResult, error) {
+	s.runAsOf = asOf
+	s.runDryRun = dryRun
+	return s.runResult, nil
 }
 
 type stubInvoices struct{ views []billing.InvoiceView }
@@ -201,6 +210,83 @@ func TestTriggerBilling_NotFound(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestRunBilling_DryRunPreview(t *testing.T) {
+	sc := &stubContracts{runResult: contract.BillingRunResult{
+		RunID:  "BR-20260610",
+		AsOf:   time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC),
+		DryRun: true,
+		Items: []contract.BillingRunItem{
+			{ContractID: "CT-0001", BillingAccountID: "BA-0001", Amount: shared.JPY(3000), Period: "2026-06"},
+		},
+		Skipped: 1,
+	}}
+	srv := newTestServer(httpapi.Deps{Contracts: sc})
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/billing-runs", "application/json", strings.NewReader(`{"asOf":"2026-06-10","dryRun":true}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	// 渡された引数が正しくサービスへ伝わること。
+	if !sc.runDryRun {
+		t.Error("dryRun が false で渡された, want true")
+	}
+	if sc.runAsOf.Format("2006-01-02") != "2026-06-10" {
+		t.Errorf("asOf = %s, want 2026-06-10", sc.runAsOf.Format("2006-01-02"))
+	}
+
+	var got struct {
+		RunID   string `json:"runId"`
+		DryRun  bool   `json:"dryRun"`
+		Skipped int    `json:"skipped"`
+		Items   []struct {
+			ContractID string `json:"contractId"`
+			Period     string `json:"period"`
+			Amount     struct {
+				Amount int64 `json:"amount"`
+			} `json:"amount"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.RunID != "BR-20260610" || !got.DryRun || got.Skipped != 1 {
+		t.Errorf("result = %+v", got)
+	}
+	if len(got.Items) != 1 || got.Items[0].ContractID != "CT-0001" || got.Items[0].Period != "2026-06" {
+		t.Fatalf("items = %+v", got.Items)
+	}
+	if got.Items[0].Amount.Amount != 3000 {
+		t.Errorf("amount = %d, want 3000", got.Items[0].Amount.Amount)
+	}
+}
+
+func TestRunBilling_DefaultsAsOfToNow(t *testing.T) {
+	sc := &stubContracts{}
+	srv := newTestServer(httpapi.Deps{Contracts: sc})
+	defer srv.Close()
+
+	// ボディなしでも 200 で、asOf が現在時刻にフォールバックする。
+	resp, err := http.Post(srv.URL+"/api/billing-runs", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if sc.runAsOf.IsZero() {
+		t.Error("asOf が現在時刻にフォールバックしていない")
+	}
+	if sc.runDryRun {
+		t.Error("dryRun は既定で false のはず")
 	}
 }
 

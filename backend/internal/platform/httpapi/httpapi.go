@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/collection"
@@ -21,6 +22,7 @@ type ContractReader interface {
 	List() []contract.ContractView
 	RegisterContract(id shared.ContractID, member shared.MemberID, account shared.BillingAccountID, fee shared.Money)
 	TriggerBilling(ctx context.Context, id shared.ContractID) error
+	RunBilling(ctx context.Context, asOf time.Time, dryRun bool) (contract.BillingRunResult, error)
 }
 
 // InvoiceReader は請求書一覧を提供する。
@@ -66,6 +68,7 @@ func New(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/contracts", s.handleListContracts)
 	mux.HandleFunc("POST /api/contracts", s.handleRegisterContract)
 	mux.HandleFunc("POST /api/contracts/{id}/billing", s.handleTriggerBilling)
+	mux.HandleFunc("POST /api/billing-runs", s.handleRunBilling)
 	mux.HandleFunc("GET /api/invoices", s.handleListInvoices)
 	mux.HandleFunc("GET /api/collection-states", s.handleListCollectionStates)
 	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
@@ -125,6 +128,34 @@ func (s *server) handleTriggerBilling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"contractId": id})
+}
+
+// handleRunBilling は Billing Run（定期請求の自動起票）を起動する。
+// ボディ（任意）: {"asOf":"2026-06-10","dryRun":true}。asOf 省略時は現在時刻。
+// dryRun=true なら抽出結果のプレビューのみを返す（起票しない）。
+func (s *server) handleRunBilling(w http.ResponseWriter, r *http.Request) {
+	req := runBillingRequest{}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_body", "リクエストボディを解釈できません")
+			return
+		}
+	}
+	asOf := time.Now()
+	if req.AsOf != "" {
+		t, err := time.Parse("2006-01-02", req.AsOf)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_as_of", "asOf は YYYY-MM-DD 形式で指定してください")
+			return
+		}
+		asOf = t
+	}
+	result, err := s.deps.Contracts.RunBilling(r.Context(), asOf, req.DryRun)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, toBillingRunDTO(result))
 }
 
 func (s *server) handleListInvoices(w http.ResponseWriter, _ *http.Request) {

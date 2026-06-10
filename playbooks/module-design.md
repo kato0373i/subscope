@@ -6,7 +6,7 @@
 
 各モジュールは「公開パッケージ + private ドメイン」の2層で構成する。
 
-```
+```text
 backend/internal/<module>/
 ├── <module>.go              # 公開 API（package <module>）。Service と統合イベント購読を置く
 └── internal/

@@ -1,10 +1,9 @@
 import type { Contract, CollectionState } from "./types";
 
-// 接続方針（#20 の decision）:
-// バックエンドは現状 HTTP API を持たず、cmd/api のデモ実行のみ。
-// そこでフロントは「SubscopeApi インターフェース」越しにデータを取得する形にし、
-// 既定実装はモック（MockApi）とする。バックエンドに REST/HTTP 層が入った段階で
-// HttpApi 実装を追加して差し替えるだけで済むよう、UI は API 抽象にのみ依存する。
+// 接続方針（#20 / #35）:
+// フロントは「SubscopeApi インターフェース」越しにデータを取得し、UI は API 抽象にのみ依存する。
+// 実装は MockApi（決定的サンプル）と HttpApi（REST API: internal/platform/httpapi）の2つ。
+// VITE_API_BASE_URL が設定されていれば HttpApi、未設定なら MockApi を既定にする。
 
 /** フロントが依存するデータ取得の境界。実装はモック／HTTP を差し替え可能。 */
 export interface SubscopeApi {
@@ -109,5 +108,35 @@ export class MockApi implements SubscopeApi {
   }
 }
 
-/** 既定の API 実装。HTTP 層が入るまではモックを用いる。 */
-export const api: SubscopeApi = new MockApi();
+/**
+ * HttpApi はバックエンドの REST API（internal/platform/httpapi）に接続する実装。
+ * DTO は types.ts と 1:1 整合しているため、レスポンスをそのまま返す。
+ */
+export class HttpApi implements SubscopeApi {
+  constructor(private readonly baseUrl: string) {}
+
+  async listContracts(): Promise<Contract[]> {
+    return this.get<Contract[]>("/api/contracts");
+  }
+
+  async listCollectionStates(): Promise<CollectionState[]> {
+    return this.get<CollectionState[]>("/api/collection-states");
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`);
+    if (!res.ok) {
+      throw new Error(`API ${path} が失敗しました: ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  }
+}
+
+/**
+ * 既定の API 実装。VITE_API_BASE_URL が設定されていれば実 API（HttpApi）、
+ * 未設定なら MockApi を用いる（当面は安全側でモック既定）。
+ */
+const baseUrl = import.meta.env.VITE_API_BASE_URL;
+export const api: SubscopeApi = baseUrl
+  ? new HttpApi(baseUrl)
+  : new MockApi();

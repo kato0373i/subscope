@@ -34,3 +34,14 @@ func (s *Service) Exists(id shared.MemberID) bool {
 	_, ok := s.members[id]
 	return ok
 }
+
+// Name は会員の表示名を返す（読み取り API 用）。未登録なら ok=false。
+func (s *Service) Name(id shared.MemberID) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m, ok := s.members[id]
+	if !ok {
+		return "", false
+	}
+	return m.Name, true
+}

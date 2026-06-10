@@ -4,7 +4,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
+	"net/http"
+	"os"
 
 	"github.com/kato0373i/subscope/backend/internal/audit"
 	"github.com/kato0373i/subscope/backend/internal/billing"
@@ -22,6 +25,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/paymentmethod"
 	"github.com/kato0373i/subscope/backend/internal/plan"
 	"github.com/kato0373i/subscope/backend/internal/platform/eventbus"
+	"github.com/kato0373i/subscope/backend/internal/platform/httpapi"
 	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 	"github.com/kato0373i/subscope/backend/internal/shared/events"
@@ -30,6 +34,10 @@ import (
 
 func main() {
 	log.SetFlags(0)
+
+	serve := flag.Bool("serve", true, "HTTP API サーバを常駐起動する（false でデモ実行のみ）")
+	flag.Parse()
+
 	bus := eventbus.NewInMemory()
 
 	// 各モジュールはイベントバスだけを介して結線される（直接の関数呼び出しはしない）。
@@ -40,8 +48,8 @@ func main() {
 	coupons := coupon.NewService()
 	pms := paymentmethod.NewService(bus)
 	contracts := contract.NewService(bus)
-	_ = billing.NewService(bus)
-	_ = collection.NewService(bus)
+	invoices := billing.NewService(bus)
+	cases := collection.NewService(bus)
 	_ = payment.NewService(bus)
 	_ = settlement.NewService(bus)
 	_ = dunning.NewService(bus)
@@ -130,4 +138,25 @@ func main() {
 	log.Printf("[demo][metrics] 請求 %d 件 / 請求総額 %s", snap.InvoicesIssued, snap.BilledTotal)
 	log.Printf("[demo][audit] 監査ログ %d 件を記録", auditLog.Len())
 	log.Printf("[demo][webhook] 配信記録 %d 件", len(hooks.Deliveries()))
+
+	if !*serve {
+		return
+	}
+
+	// HTTP API を常駐起動する。デモで投入したシードデータがそのまま API から見える。
+	handler := httpapi.New(httpapi.Deps{
+		Contracts: contracts,
+		Invoices:  invoices,
+		Cases:     cases,
+		Members:   members,
+		Metrics:   mtr,
+	})
+	addr := os.Getenv("SUBSCOPE_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	log.Printf("[httpapi] listening on %s", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		log.Fatalf("http server: %v", err)
+	}
 }

@@ -241,6 +241,11 @@ func TestRunBilling_DryRunPreview(t *testing.T) {
 	if sc.runAsOf.Format("2006-01-02") != "2026-06-10" {
 		t.Errorf("asOf = %s, want 2026-06-10", sc.runAsOf.Format("2006-01-02"))
 	}
+	// asOf はドメインの時刻系（ローカル）に合わせて解釈する。UTC 固定だと非 UTC 環境で
+	// 請求サイクル境界の due 判定がズレるため、ローカルの午前0時に正規化されること。
+	if sc.runAsOf.Location() != time.Local || sc.runAsOf.Hour() != 0 {
+		t.Errorf("asOf = %v (loc=%v), want ローカル午前0時", sc.runAsOf, sc.runAsOf.Location())
+	}
 
 	var got struct {
 		RunID   string `json:"runId"`

@@ -143,7 +143,10 @@ func (s *server) handleRunBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	asOf := time.Now()
 	if req.AsOf != "" {
-		t, err := time.Parse("2006-01-02", req.AsOf)
+		// asOf はドメインが NextBillingDate を算出する時刻系（ローカル）に合わせて解釈する。
+		// time.Parse は TZ 無し＝UTC 解釈になり、ローカルが UTC でない環境では請求サイクル
+		// 境界の due 判定が最大 TZ オフセットぶんズレうる。両層の基準をローカルに揃える。
+		t, err := time.ParseInLocation("2006-01-02", req.AsOf, time.Local)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_as_of", "asOf は YYYY-MM-DD 形式で指定してください")
 			return

@@ -14,8 +14,8 @@ main から切る。Conventional Commits に揃えた接頭辞を使う：
 
 Conventional Commits 形式。件名は日本語で良い。本文で「何を・なぜ」を簡潔に。末尾に必ず：
 
-```
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+```text
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 ```
 
 **例：**

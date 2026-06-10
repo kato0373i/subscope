@@ -290,6 +290,42 @@ func TestRunBilling_DefaultsAsOfToNow(t *testing.T) {
 	}
 }
 
+func TestMetrics_ReturnsSnapshot(t *testing.T) {
+	deps := httpapi.Deps{Metrics: &stubMetrics{snap: metrics.Snapshot{
+		ActiveContracts: 3,
+		InvoicesIssued:  2,
+		BilledTotal:     shared.JPY(6000),
+	}}}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/metrics")
+	if err != nil {
+		t.Fatalf("GET /api/metrics: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var got struct {
+		ActiveContracts int `json:"activeContracts"`
+		InvoicesIssued  int `json:"invoicesIssued"`
+		BilledTotal     struct {
+			Amount   int64  `json:"amount"`
+			Currency string `json:"currency"`
+		} `json:"billedTotal"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ActiveContracts != 3 || got.InvoicesIssued != 2 {
+		t.Errorf("snapshot = %+v, want activeContracts=3 invoicesIssued=2", got)
+	}
+	if got.BilledTotal.Amount != 6000 || got.BilledTotal.Currency != "JPY" {
+		t.Errorf("billedTotal = %+v, want {6000 JPY}", got.BilledTotal)
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
 	srv := newTestServer(httpapi.Deps{})
 	defer srv.Close()

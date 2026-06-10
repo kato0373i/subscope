@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/kato0373i/subscope/backend/internal/audit"
 	"github.com/kato0373i/subscope/backend/internal/billing"
@@ -132,6 +133,20 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 	log.Println("=== 完了 ===")
+
+	// デモ: Billing Run（定期請求の自動起票）。来月分を対象にまずドライランで抽出を確認し、
+	// 続けて本実行する。Run は「誰に・いくら・どの期間」だけを発火し、決済手段には触れない
+	// （債権≠決済手段。手段は後段の collection が請求先ごとに遅延束縛し、付け替え可能）。
+	contracts.RegisterContract("CT-0002", "MEM-0001", "BA-0001", shared.JPY(3000))
+	asOf := time.Now().AddDate(0, 1, 0)
+	preview, err := contracts.RunBilling(ctx, asOf, true)
+	if err != nil {
+		log.Fatalf("RunBilling(dry): %v", err)
+	}
+	log.Printf("[demo] Billing Run ドライラン: 対象 %d 件 / スキップ %d 件", len(preview.Items), preview.Skipped)
+	if _, err := contracts.RunBilling(ctx, asOf, false); err != nil {
+		log.Fatalf("RunBilling: %v", err)
+	}
 
 	// デモ: 支援モジュールが横断的に観測した結果を表示する。
 	snap := mtr.Snapshot()

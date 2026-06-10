@@ -66,6 +66,48 @@ type registerContractRequest struct {
 	MonthlyFee       moneyDTO `json:"monthlyFee"`
 }
 
+// runBillingRequest は POST /api/billing-runs のリクエストボディ（全フィールド任意）。
+type runBillingRequest struct {
+	AsOf   string `json:"asOf"`   // YYYY-MM-DD。省略時は現在時刻。
+	DryRun bool   `json:"dryRun"` // true なら抽出のみ（起票しない）。
+}
+
+// billingRunItemDTO は Billing Run が起票（予定）した 1 件。決済手段は持たない（債権≠決済手段）。
+type billingRunItemDTO struct {
+	ContractID       string   `json:"contractId"`
+	BillingAccountID string   `json:"billingAccountId"`
+	Amount           moneyDTO `json:"amount"`
+	Period           string   `json:"period"`
+}
+
+// billingRunResultDTO は POST /api/billing-runs のレスポンス。
+type billingRunResultDTO struct {
+	RunID   string              `json:"runId"`
+	AsOf    string              `json:"asOf"`
+	DryRun  bool                `json:"dryRun"`
+	Items   []billingRunItemDTO `json:"items"`
+	Skipped int                 `json:"skipped"`
+}
+
+func toBillingRunDTO(r contract.BillingRunResult) billingRunResultDTO {
+	items := make([]billingRunItemDTO, 0, len(r.Items))
+	for _, it := range r.Items {
+		items = append(items, billingRunItemDTO{
+			ContractID:       string(it.ContractID),
+			BillingAccountID: string(it.BillingAccountID),
+			Amount:           toMoney(it.Amount),
+			Period:           it.Period,
+		})
+	}
+	return billingRunResultDTO{
+		RunID:   string(r.RunID),
+		AsOf:    r.AsOf.Format("2006-01-02"),
+		DryRun:  r.DryRun,
+		Items:   items,
+		Skipped: r.Skipped,
+	}
+}
+
 func toContractDTO(v contract.ContractView, memberName string) contractDTO {
 	return contractDTO{
 		ID:               string(v.ID),

@@ -6,11 +6,19 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/kato0373i/subscope/backend/internal/collection/internal/domain"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 	"github.com/kato0373i/subscope/backend/internal/shared/events"
 )
+
+// CaseView は回収案件の読み取り専用ビュー（外向き読みモデル）。
+// invoice 単位の回収ステータスを HTTP/読み取り層へ渡す。
+type CaseView struct {
+	InvoiceID shared.InvoiceID
+	Status    string
+}
 
 // 戦略まわりの型を公開パッケージから再エクスポートする（呼び出し側が domain を import せず設定できるように）。
 type (
@@ -56,6 +64,19 @@ func NewServiceWithStrategy(bus shared.EventBus, resolver StrategyResolver) *Ser
 	bus.Subscribe(events.NamePaymentFailed, s.onPaymentFailed)
 	bus.Subscribe(events.NameInvoicePaid, s.onInvoicePaid)
 	return s
+}
+
+// ListCases は回収案件を invoice ID 昇順で返す（読み取り API 用）。
+func (s *Service) ListCases() []CaseView {
+	views := make([]CaseView, 0, len(s.cases))
+	for _, c := range s.cases {
+		views = append(views, CaseView{
+			InvoiceID: c.Invoice,
+			Status:    string(c.Status),
+		})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].InvoiceID < views[j].InvoiceID })
+	return views
 }
 
 func (s *Service) onInvoiceIssued(ctx context.Context, e shared.Event) error {

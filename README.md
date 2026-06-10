@@ -41,11 +41,11 @@ subscope/
 │       ├── audit/            # 監査ログ（全統合イベントを追記専用・不変で記録）
 │       ├── webhook/          # 外部連携（WebhookEndpoint / Delivery・配信リトライ）
 │       ├── shared/           # 型付き ID・Money・イベント抽象・統合イベント
-│       └── platform/         # インフラ実装（イベントバス等）
+│       └── platform/         # インフラ実装（イベントバス・HTTP API レイヤ）
 └── frontend/                 # 管理画面（React + TypeScript + Vite）
     └── src/
         ├── App.tsx           # 画面（契約一覧・請求/回収状況）
-        └── api/              # SubscopeApi 抽象 + MockApi（接続方針は frontend/README）
+        └── api/              # SubscopeApi 抽象 + MockApi / HttpApi（接続方針は frontend/README）
 ```
 
 各モジュールは公開パッケージ（`internal/<module>/`）のみを外部に晒し、エンティティは
@@ -62,6 +62,28 @@ subscope/
 cd backend
 go run ./cmd/api
 ```
+
+`go run ./cmd/api` はデモのシード投入後、既定で HTTP API サーバを `:8080` で常駐起動する
+（`SUBSCOPE_ADDR` で変更可、`-serve=false` でデモ単発）。
+
+## HTTP API（REST）
+
+`internal/platform/httpapi` が各モジュールの公開 Service を REST で公開する。ハンドラは
+公開 API のみを呼び、ドメイン集約・他モジュールのテーブルには触れない（読み取りは複数
+モジュールの公開 API を合成して DTO を返す）。
+
+| メソッド・パス | 説明 |
+|---|---|
+| `GET /healthz` | ヘルスチェック |
+| `GET /api/contracts` | 契約一覧 |
+| `POST /api/contracts` | 契約登録（コマンド） |
+| `POST /api/contracts/{id}/billing` | 請求トリガ（コマンド） |
+| `GET /api/invoices` | 請求書一覧 |
+| `GET /api/collection-states` | 請求/回収状況（billing × collection を合成） |
+| `GET /api/metrics` | 指標スナップショット |
+
+フロントは `frontend/src/api` の `SubscopeApi` 抽象に依存し、`VITE_API_BASE_URL` を
+設定すると `HttpApi`（実 API）、未設定なら `MockApi` を使う。
 
 ## 設計の詳細
 

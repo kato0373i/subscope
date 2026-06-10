@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/kato0373i/subscope/backend/internal/contract/internal/domain"
@@ -15,6 +16,16 @@ import (
 
 // Adjustment は日割り調整明細の再エクスポート。
 type Adjustment = domain.Adjustment
+
+// ContractView は契約の読み取り専用ビュー（外向き読みモデル）。
+// HTTP/読み取り層へ domain 集約を露出させないための DTO。
+type ContractView struct {
+	ID               shared.ContractID
+	MemberID         shared.MemberID
+	BillingAccountID shared.BillingAccountID
+	MonthlyFee       shared.Money
+	Status           string
+}
 
 // ErrNotFound は契約が見つからない場合に返る。
 var ErrNotFound = errors.New("契約が見つかりません")
@@ -26,6 +37,22 @@ type Service struct {
 
 func NewService(bus shared.EventBus) *Service {
 	return &Service{bus: bus, contracts: make(map[shared.ContractID]*domain.Contract)}
+}
+
+// List は登録済み契約を ID 昇順で返す（読み取り API 用）。
+func (s *Service) List() []ContractView {
+	views := make([]ContractView, 0, len(s.contracts))
+	for _, c := range s.contracts {
+		views = append(views, ContractView{
+			ID:               c.ID,
+			MemberID:         c.MemberID,
+			BillingAccountID: c.BillingAccountID,
+			MonthlyFee:       c.MonthlyFee,
+			Status:           string(c.Status),
+		})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].ID < views[j].ID })
+	return views
 }
 
 // RegisterContract は契約を登録する（デモ用の簡易入口）。

@@ -22,21 +22,27 @@ frontend/
 │   ├── format.ts         # 表示整形（金額・状態ラベル）
 │   └── api/
 │       ├── types.ts      # バックエンドのドメインに対応する DTO 型
-│       └── client.ts     # SubscopeApi 抽象 + MockApi 実装
+│       └── client.ts     # SubscopeApi 抽象 + MockApi / HttpApi 実装
 ├── eslint.config.js
 ├── tsconfig*.json
 └── vite.config.ts
 ```
 
-## バックエンド API との接続方針（#20 decision）
+## バックエンド API との接続方針（#20 / #35）
 
-バックエンドは現状 HTTP API を持たず、`backend/cmd/api` のデモ実行のみ。
-そこでフロントは **`SubscopeApi` インターフェース越し**にデータを取得する設計とし、
-既定実装は **`MockApi`（決定的なサンプルデータ）** とする。
+フロントは **`SubscopeApi` インターフェース越し**にデータを取得する設計で、
+UI コンポーネントは API 抽象にのみ依存し、データ源の実装には依存しない。
 
-バックエンドに REST/HTTP 層が追加された段階で、`HttpApi` 実装を `src/api/client.ts`
-に追加して `api` の差し替えだけで切り替えられる。UI コンポーネントは API 抽象にのみ
-依存しており、データ源の実装には依存しない。
+実装は2つ：
+- **`MockApi`** — 決定的なサンプルデータ（既定。バックエンド未起動でも動く）。
+- **`HttpApi`** — バックエンドの REST API（`internal/platform/httpapi`, #35）に接続。
+
+`api` の選択は環境変数で行う：`VITE_API_BASE_URL` が設定されていれば `HttpApi`、
+未設定なら `MockApi`。例：
+
+```sh
+VITE_API_BASE_URL=http://localhost:8080 npm run dev
+```
 
 DTO 型（`src/api/types.ts`）はバックエンドの `shared.Money` と各 ID・状態機械に
 1:1 で対応させ、API 境界の契約をフロント側にも明示している。

@@ -159,13 +159,21 @@ func main() {
 	}
 
 	// HTTP API を常駐起動する。デモで投入したシードデータがそのまま API から見える。
-	handler := httpapi.New(httpapi.Deps{
+	var handler http.Handler = httpapi.New(httpapi.Deps{
 		Contracts: contracts,
 		Invoices:  invoices,
 		Cases:     cases,
 		Members:   members,
 		Metrics:   mtr,
 	})
+
+	// STATIC_DIR が指定されていれば、ビルド済みフロントを同一オリジンで配信する。
+	// /api・/healthz は API、それ以外は静的アセット（SPA フォールバック付き）。Docker 想定。
+	if staticDir := os.Getenv("STATIC_DIR"); staticDir != "" {
+		handler = withStaticFallback(handler, staticDir)
+		log.Printf("[httpapi] serving static frontend from %s", staticDir)
+	}
+
 	addr := os.Getenv("SUBSCOPE_ADDR")
 	if addr == "" {
 		addr = ":8080"

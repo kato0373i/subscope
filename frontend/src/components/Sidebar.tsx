@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import type { View } from "../views";
-import { IconCollection, IconContract, IconDashboard } from "./icons";
+import {
+  IconCollection,
+  IconContract,
+  IconDashboard,
+  IconOperations,
+} from "./icons";
 
 interface Props {
   view: View;
@@ -9,6 +14,7 @@ interface Props {
 
 const items: { key: View; label: string; icon: ReactNode }[] = [
   { key: "dashboard", label: "ダッシュボード", icon: <IconDashboard /> },
+  { key: "operations", label: "登録・操作", icon: <IconOperations /> },
   { key: "contracts", label: "契約", icon: <IconContract /> },
   { key: "collections", label: "請求・回収", icon: <IconCollection /> },
 ];
@@ -37,8 +43,8 @@ export function Sidebar({ view, onChange }: Props) {
       </nav>
 
       <div className="sidebar__foot">
-        <span className="sidebar__env">Mock 環境</span>
-        <span className="sidebar__hint">API 接続前のプレビュー</span>
+        <span className="sidebar__env">subscope</span>
+        <span className="sidebar__hint">会費 Pay 型 SaaS</span>
       </div>
     </aside>
   );

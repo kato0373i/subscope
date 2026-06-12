@@ -1,15 +1,30 @@
-import type { Contract, CollectionState } from "./types";
+import type {
+  BillingRunInput,
+  BillingRunResult,
+  Contract,
+  CollectionState,
+  RegisterContractInput,
+} from "./types";
 
-// 接続方針（#20 / #35）:
-// フロントは「SubscopeApi インターフェース」越しにデータを取得し、UI は API 抽象にのみ依存する。
-// 実装は MockApi（決定的サンプル）と HttpApi（REST API: internal/platform/httpapi）の2つ。
-// VITE_API_BASE_URL が設定されていれば HttpApi、未設定なら MockApi を既定にする。
+// 接続方針（#20 / #35 / #59）:
+// フロントは「SubscopeApi インターフェース」越しにデータ取得・操作を行い、UI は API 抽象にのみ依存する。
+// 実装は MockApi（決定的サンプル・読み取り専用）と HttpApi（REST API: internal/platform/httpapi）の2つ。
+// VITE_API_BASE_URL が定義されていれば HttpApi（空文字 "" は同一オリジン）、未定義なら MockApi を既定にする。
+// Docker では同一プロセスが UI と API を配信するため、ビルド時に VITE_API_BASE_URL="" を渡して HttpApi にする。
 
-/** フロントが依存するデータ取得の境界。実装はモック／HTTP を差し替え可能。 */
+/** フロントが依存するデータ取得・操作の境界。実装はモック／HTTP を差し替え可能。 */
 export interface SubscopeApi {
   listContracts(): Promise<Contract[]>;
   listCollectionStates(): Promise<CollectionState[]>;
+  registerContract(input: RegisterContractInput): Promise<{ id: string }>;
+  triggerBilling(contractId: string): Promise<void>;
+  runBilling(input: BillingRunInput): Promise<BillingRunResult>;
 }
+
+/** モックは読み取り専用。操作系は実 API（HttpApi）でのみ利用できる。 */
+const notSupported = (): never => {
+  throw new Error("モック環境では操作 API は利用できません（VITE_API_BASE_URL を設定してください）");
+};
 
 const jpy = (amount: number) => ({ amount, currency: "JPY" });
 
@@ -106,6 +121,18 @@ export class MockApi implements SubscopeApi {
   listCollectionStates(): Promise<CollectionState[]> {
     return Promise.resolve(mockCollectionStates);
   }
+
+  registerContract(): Promise<{ id: string }> {
+    return Promise.resolve(notSupported());
+  }
+
+  triggerBilling(): Promise<void> {
+    return Promise.resolve(notSupported());
+  }
+
+  runBilling(): Promise<BillingRunResult> {
+    return Promise.resolve(notSupported());
+  }
 }
 
 /**
@@ -123,6 +150,18 @@ export class HttpApi implements SubscopeApi {
     return this.get<CollectionState[]>("/api/collection-states");
   }
 
+  async registerContract(input: RegisterContractInput): Promise<{ id: string }> {
+    return this.post<{ id: string }>("/api/contracts", input);
+  }
+
+  async triggerBilling(contractId: string): Promise<void> {
+    await this.post<unknown>(`/api/contracts/${contractId}/billing`, {});
+  }
+
+  async runBilling(input: BillingRunInput): Promise<BillingRunResult> {
+    return this.post<BillingRunResult>("/api/billing-runs", input);
+  }
+
   private async get<T>(path: string): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`);
     if (!res.ok) {
@@ -130,13 +169,34 @@ export class HttpApi implements SubscopeApi {
     }
     return res.json() as Promise<T>;
   }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      // エラー本文 { error: { code, message } } を可能なら取り出す。
+      let message = `${res.status}`;
+      try {
+        const data = (await res.json()) as { error?: { message?: string } };
+        if (data.error?.message) message = data.error.message;
+      } catch {
+        // JSON でなければステータスのみ。
+      }
+      throw new Error(`API ${path} が失敗しました: ${message}`);
+    }
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  }
 }
 
 /**
- * 既定の API 実装。VITE_API_BASE_URL が設定されていれば実 API（HttpApi）、
- * 未設定なら MockApi を用いる（当面は安全側でモック既定）。
+ * 既定の API 実装。VITE_API_BASE_URL が「定義されていれば」実 API（HttpApi）を使う。
+ * 空文字 "" は同一オリジン（相対パス /api/...）を意味し、Docker の単一プロセス配信で用いる。
+ * 環境変数が未定義のときだけ MockApi にフォールバックする（バックエンド無しの開発時）。
  */
 const baseUrl = import.meta.env.VITE_API_BASE_URL;
-export const api: SubscopeApi = baseUrl
-  ? new HttpApi(baseUrl)
-  : new MockApi();
+export const api: SubscopeApi =
+  baseUrl === undefined ? new MockApi() : new HttpApi(baseUrl);

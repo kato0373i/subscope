@@ -39,3 +39,38 @@ export interface CollectionState {
   amount: Money;
   status: CollectionStatus;
 }
+
+// --- 操作（コマンド）系の入出力。バックエンド httpapi の REST 契約に対応。 ---
+
+/** 契約登録の入力（POST /api/contracts）。 */
+export interface RegisterContractInput {
+  id: string;
+  memberId: string;
+  billingAccountId: string;
+  monthlyFee: Money;
+}
+
+/** Billing Run（定期請求の自動起票）の入力（POST /api/billing-runs、全フィールド任意）。 */
+export interface BillingRunInput {
+  /** YYYY-MM-DD。省略時はサーバの現在時刻。 */
+  asOf?: string;
+  /** true なら抽出のみ（起票しない）。 */
+  dryRun?: boolean;
+}
+
+/** Billing Run が起票（予定）した 1 件。決済手段は持たない（債権≠決済手段）。 */
+export interface BillingRunItem {
+  contractId: string;
+  billingAccountId: string;
+  amount: Money;
+  period: string;
+}
+
+/** Billing Run の実行結果。 */
+export interface BillingRunResult {
+  runId: string;
+  asOf: string;
+  dryRun: boolean;
+  items: BillingRunItem[];
+  skipped: number;
+}

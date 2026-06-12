@@ -36,4 +36,7 @@ ENV SUBSCOPE_ADDR=":8080"
 ENV STATIC_DIR="/app/web"
 EXPOSE 8080
 
+# 非 root で実行する（distroless:nonroot の既定ユーザーを明示し、CI でも検証可能にする）。
+USER nonroot:nonroot
+
 ENTRYPOINT ["/app/api"]

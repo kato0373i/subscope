@@ -164,13 +164,14 @@ function ContractForm({ api, notify, refresh }: Props) {
             required
           />
         </Field>
-        <Field label="月会費（円）">
+        <Field label="月会費（円）" hint="円単位の整数（最小通貨単位）">
           <input
             className="input"
             type="number"
             min={1}
+            step={1}
             value={monthlyFee}
-            onChange={(e) => setMonthlyFee(Number(e.target.value))}
+            onChange={(e) => setMonthlyFee(Math.trunc(Number(e.target.value)))}
           />
         </Field>
       </div>

@@ -35,7 +35,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [busyAction, setBusyAction] = useState<string | null>(null);
+  // 進行中の操作キー集合。行ごとに独立して二重送信を防ぐ（1 文字列だと別行操作で上書きされる）。
+  const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     const [c, s] = await Promise.all([
@@ -92,7 +93,8 @@ function App() {
 
   const triggerBilling = useCallback(
     async (contractId: string) => {
-      setBusyAction(`bill-${contractId}`);
+      const key = `bill-${contractId}`;
+      setBusyActions((prev) => new Set(prev).add(key));
       try {
         await api.triggerBilling(contractId);
         await refresh();
@@ -100,7 +102,11 @@ function App() {
       } catch (err) {
         notify(err instanceof Error ? err.message : "請求実行に失敗しました", "error");
       } finally {
-        setBusyAction(null);
+        setBusyActions((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
       }
     },
     [refresh, notify],
@@ -206,10 +212,10 @@ function App() {
                                 <button
                                   type="button"
                                   className="btn btn--sm btn--ghost"
-                                  disabled={busyAction === `bill-${c.id}`}
+                                  disabled={busyActions.has(`bill-${c.id}`)}
                                   onClick={() => triggerBilling(c.id)}
                                 >
-                                  {busyAction === `bill-${c.id}` ? "実行中…" : "請求実行"}
+                                  {busyActions.has(`bill-${c.id}`) ? "実行中…" : "請求実行"}
                                 </button>
                               </td>
                             </tr>

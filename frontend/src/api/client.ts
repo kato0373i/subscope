@@ -145,12 +145,15 @@ export class MockApi implements SubscopeApi {
  * DTO は types.ts と 1:1 整合しているため、レスポンスをそのまま返す。
  */
 export class HttpApi implements SubscopeApi {
+  /** baseUrl は API のベース URL。空文字なら同一オリジン（相対パス）を叩く。 */
   constructor(private readonly baseUrl: string) {}
 
+  /** 契約一覧を取得する（GET /api/contracts）。 */
   async listContracts(): Promise<Contract[]> {
     return this.get<Contract[]>("/api/contracts");
   }
 
+  /** 請求/回収状況を取得する（GET /api/collection-states）。 */
   async listCollectionStates(): Promise<CollectionState[]> {
     return this.get<CollectionState[]>("/api/collection-states");
   }

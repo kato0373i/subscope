@@ -112,24 +112,29 @@ const mockCollectionStates: CollectionState[] = [
   },
 ];
 
-/** MockApi はバックエンド API 整備前の暫定データ源。決定的なサンプルを返す。 */
+/** MockApi はバックエンド API 整備前の暫定データ源。決定的なサンプルを返す（読み取り専用）。 */
 export class MockApi implements SubscopeApi {
+  /** 契約一覧のサンプルを返す。 */
   listContracts(): Promise<Contract[]> {
     return Promise.resolve(mockContracts);
   }
 
+  /** 請求/回収状況のサンプルを返す。 */
   listCollectionStates(): Promise<CollectionState[]> {
     return Promise.resolve(mockCollectionStates);
   }
 
+  /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   registerContract(): Promise<{ id: string }> {
     return Promise.resolve(notSupported());
   }
 
+  /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   triggerBilling(): Promise<void> {
     return Promise.resolve(notSupported());
   }
 
+  /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   runBilling(): Promise<BillingRunResult> {
     return Promise.resolve(notSupported());
   }
@@ -150,18 +155,22 @@ export class HttpApi implements SubscopeApi {
     return this.get<CollectionState[]>("/api/collection-states");
   }
 
+  /** 契約を登録する（POST /api/contracts）。 */
   async registerContract(input: RegisterContractInput): Promise<{ id: string }> {
     return this.post<{ id: string }>("/api/contracts", input);
   }
 
+  /** 単一契約の請求サイクルを起動する（POST /api/contracts/{id}/billing）。 */
   async triggerBilling(contractId: string): Promise<void> {
     await this.post<unknown>(`/api/contracts/${contractId}/billing`, {});
   }
 
+  /** Billing Run（定期請求の自動起票）を実行する（POST /api/billing-runs）。 */
   async runBilling(input: BillingRunInput): Promise<BillingRunResult> {
     return this.post<BillingRunResult>("/api/billing-runs", input);
   }
 
+  /** GET リクエストを送り JSON を返す共通ヘルパー。 */
   private async get<T>(path: string): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`);
     if (!res.ok) {
@@ -170,6 +179,7 @@ export class HttpApi implements SubscopeApi {
     return res.json() as Promise<T>;
   }
 
+  /** POST リクエストを送り、エラー時は本文 { error: { message } } を拾って投げる共通ヘルパー。 */
   private async post<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "POST",

@@ -28,6 +28,7 @@ interface Toast {
   kind: "success" | "error";
 }
 
+/** 管理画面のルート。ダッシュボード・登録/操作・契約・請求/回収の各ビューを束ねる。 */
 function App() {
   const [view, setView] = useState<View>("dashboard");
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -38,6 +39,7 @@ function App() {
   // 進行中の操作キー集合。行ごとに独立して二重送信を防ぐ（1 文字列だと別行操作で上書きされる）。
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
 
+  /** 契約一覧と請求/回収状況を再取得して画面に反映する。 */
   const refresh = useCallback(async () => {
     const [c, s] = await Promise.all([
       api.listContracts(),
@@ -62,6 +64,7 @@ function App() {
     };
   }, [refresh]);
 
+  /** トーストを表示する（一定時間後に自動で消える）。 */
   const notify = useCallback((message: string, kind: "success" | "error") => {
     setToast({ message, kind });
   }, []);
@@ -91,6 +94,7 @@ function App() {
     };
   }, [contracts, collections]);
 
+  /** 指定契約の請求を実行し、完了後に一覧を更新する。実行中は当該行のボタンを抑止する。 */
   const triggerBilling = useCallback(
     async (contractId: string) => {
       const key = `bill-${contractId}`;

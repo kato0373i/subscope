@@ -111,6 +111,7 @@ function ContractForm({ api, notify, refresh }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** フォーム送信で契約を登録し、成功時は一覧を更新して入力をリセットする。 */
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -187,6 +188,7 @@ function BillingRunForm({ api, notify, refresh }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<BillingRunResult | null>(null);
 
+  /** Billing Run を実行する。dryRun は抽出プレビューのみ、false は実際に起票して一覧を更新する。 */
   const run = async (dryRun: boolean) => {
     setBusy(true);
     setError(null);

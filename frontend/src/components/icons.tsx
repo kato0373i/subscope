@@ -49,6 +49,7 @@ export function IconCollection({ size = 18 }: IconProps) {
   );
 }
 
+/** 「登録・操作」ナビ用の歯車アイコン。 */
 export function IconOperations({ size = 18 }: IconProps) {
   return (
     <svg {...svgProps(size)}>

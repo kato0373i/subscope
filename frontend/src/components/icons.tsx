@@ -49,6 +49,17 @@ export function IconCollection({ size = 18 }: IconProps) {
   );
 }
 
+/** 「登録・操作」ナビ用の歯車アイコン。 */
+export function IconOperations({ size = 18 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      <path d="M5.6 5.6 7.7 7.7M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+      <circle cx="12" cy="12" r="3.2" />
+    </svg>
+  );
+}
+
 export function IconUsers({ size = 18 }: IconProps) {
   return (
     <svg {...svgProps(size)}>

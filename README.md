@@ -64,7 +64,24 @@ go run ./cmd/api
 ```
 
 `go run ./cmd/api` はデモのシード投入後、既定で HTTP API サーバを `:8080` で常駐起動する
-（`SUBSCOPE_ADDR` で変更可、`-serve=false` でデモ単発）。
+（`SUBSCOPE_ADDR` で変更可、`-serve=false` でデモ単発）。`STATIC_DIR` を指定すると、
+ビルド済みフロントを同一オリジンで配信する（`/api`・`/healthz` 以外は SPA フォールバック）。
+
+## Docker でワンコマンド起動（UI 付き）
+
+フロントのビルドと Go バイナリのビルドを 1 イメージにまとめ、1 プロセスで REST API と
+管理画面を同一オリジン配信する。Docker さえあれば他の依存は不要。
+
+```sh
+docker compose up --build
+```
+
+起動後、ブラウザで **http://localhost:8080** を開くと管理画面が表示される。デモデータ
+（契約 CT-0001 ほか）が投入済みで、「登録・操作」画面から契約登録・Billing Run、契約一覧から
+「請求実行」を行い、請求・回収状況の更新まで一連で操作できる。
+
+> 開発時にフロントの HMR を使う場合は `frontend/` で `VITE_API_BASE_URL=http://localhost:8080 npm run dev`
+> とし、別途 `go run ./cmd/api` で API を起動する（`VITE_API_BASE_URL` 未設定なら `MockApi`）。
 
 ## HTTP API（REST）
 

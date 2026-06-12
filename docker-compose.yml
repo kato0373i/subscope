@@ -1,0 +1,11 @@
+# subscope をワンコマンドで起動する。
+#   docker compose up --build
+# 起動後 http://localhost:8080 で管理画面が開く（デモデータ投入済み）。
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

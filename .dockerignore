@@ -1,0 +1,13 @@
+# ビルドに不要なもの・秘匿情報をイメージへ持ち込まない
+.git
+.github
+**/node_modules
+frontend/dist
+**/.env
+**/.env.*
+*.log
+docs
+playbooks
+scripts
+rule-mining-output.md
+.claude

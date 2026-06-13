@@ -5,6 +5,7 @@ package settlement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -12,6 +13,32 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/shared"
 	"github.com/kato0373i/subscope/backend/internal/shared/events"
 )
+
+// ErrNotOutstanding は手動消込の対象（未消込の請求）が見つからない場合に返る。
+var ErrNotOutstanding = errors.New("settlement: 未消込の請求が見つかりません")
+
+// 過充当・通貨不一致を呼び出し側（HTTP層など）が分類できるよう再エクスポートする。
+var (
+	ErrOverApplication  = domain.ErrOverApplication
+	ErrCurrencyMismatch = domain.ErrCurrencyMismatch
+)
+
+// SettlementView は消込実績の外向き読み取りビュー。
+type SettlementView struct {
+	SettlementID shared.SettlementID
+	InvoiceID    shared.InvoiceID
+	Amount       shared.Money // 入金額
+	Reconciled   shared.Money // 充当済み
+	FullyApplied bool         // 入金額の全額が充当済みか（部分消込の可視化）
+}
+
+// OutstandingView は未消込の請求（消込候補）。手動消込画面の対象一覧。
+type OutstandingView struct {
+	InvoiceID   shared.InvoiceID
+	Account     shared.BillingAccountID
+	PayerName   string
+	Outstanding shared.Money
+}
 
 // DepositInput は銀行入金データ取込の 1 レコード（取込バッチの入力）。
 // 実運用では銀行 CSV/全銀フォーマットを ACL でこの形に正規化する想定。
@@ -166,7 +193,7 @@ func (s *Service) ImportBankDeposits(ctx context.Context, inputs []DepositInput)
 func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error {
 	c, ok := s.outstanding[invoice]
 	if !ok {
-		return fmt.Errorf("settlement: 未消込の請求が見つかりません invoice=%s", invoice)
+		return fmt.Errorf("%w invoice=%s", ErrNotOutstanding, invoice)
 	}
 	if amount.Currency != c.Outstanding.Currency {
 		return domain.ErrCurrencyMismatch
@@ -176,6 +203,37 @@ func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceI
 	}
 	log.Printf("[settlement] 手動消込 invoice=%s amount=%s", invoice, amount)
 	return s.applyToInvoice(ctx, invoice, amount)
+}
+
+// ListSettlements は消込実績の一覧を返す。
+// map 反復は順不同のため、呼び出し側で安定ソートする想定（SettlementID 昇順）。
+func (s *Service) ListSettlements() []SettlementView {
+	out := make([]SettlementView, 0, len(s.settlements))
+	for _, st := range s.settlements {
+		out = append(out, SettlementView{
+			SettlementID: st.ID,
+			InvoiceID:    st.Invoice,
+			Amount:       st.Amount,
+			Reconciled:   st.Reconciled(),
+			FullyApplied: st.FullyReconciled(),
+		})
+	}
+	return out
+}
+
+// ListOutstanding は未消込の請求（消込候補）の一覧を返す。
+// 呼び出し側で安定ソートする想定（InvoiceID 昇順）。
+func (s *Service) ListOutstanding() []OutstandingView {
+	out := make([]OutstandingView, 0, len(s.outstanding))
+	for _, c := range s.outstanding {
+		out = append(out, OutstandingView{
+			InvoiceID:   c.Invoice,
+			Account:     c.Account,
+			PayerName:   c.PayerName,
+			Outstanding: c.Outstanding,
+		})
+	}
+	return out
 }
 
 // applyToInvoice は請求の残額を減らし、全額充当なら InvoicePaid、一部なら InvoicePartiallyPaid を発行する。

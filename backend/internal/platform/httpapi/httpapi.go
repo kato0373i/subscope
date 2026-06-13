@@ -13,6 +13,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/contract"
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
+	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
 
@@ -52,14 +53,23 @@ type DunningLister interface {
 	ListCampaigns() []dunning.CampaignView
 }
 
+// SettlementReader は入金・消込の読み取りとコマンドを提供する。
+type SettlementReader interface {
+	ListSettlements() []settlement.SettlementView
+	ListOutstanding() []settlement.OutstandingView
+	ImportBankDeposits(ctx context.Context, inputs []settlement.DepositInput) error
+	ReconcileManually(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error
+}
+
 // Deps は HTTP 層が依存する各モジュールの公開 API。
 type Deps struct {
-	Contracts ContractReader
-	Invoices  InvoiceReader
-	Cases     CaseReader
-	Members   MemberNamer
-	Metrics   MetricsReader
-	Dunning   DunningLister
+	Contracts  ContractReader
+	Invoices   InvoiceReader
+	Cases      CaseReader
+	Members    MemberNamer
+	Metrics    MetricsReader
+	Dunning    DunningLister
+	Settlement SettlementReader
 }
 
 // server はルーティングとハンドラを束ねる。
@@ -81,6 +91,10 @@ func New(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/invoices", s.handleListInvoices)
 	mux.HandleFunc("GET /api/collection-states", s.handleListCollectionStates)
 	mux.HandleFunc("GET /api/dunning-campaigns", s.handleListDunningCampaigns)
+	mux.HandleFunc("GET /api/settlements", s.handleListSettlements)
+	mux.HandleFunc("GET /api/settlements/outstanding", s.handleListOutstanding)
+	mux.HandleFunc("POST /api/bank-deposits", s.handleImportBankDeposits)
+	mux.HandleFunc("POST /api/settlements/manual", s.handleReconcileManually)
 	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
 
 	return withCORS(withRecover(mux))
@@ -299,6 +313,86 @@ func (s *server) handleListDunningCampaigns(w http.ResponseWriter, _ *http.Reque
 		out = append(out, toDunningCampaignDTO(v))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleListSettlements は消込実績一覧を返す（SettlementID 昇順）。
+func (s *server) handleListSettlements(w http.ResponseWriter, _ *http.Request) {
+	views := s.deps.Settlement.ListSettlements()
+	sort.Slice(views, func(i, j int) bool { return views[i].SettlementID < views[j].SettlementID })
+	out := make([]settlementDTO, 0, len(views))
+	for _, v := range views {
+		out = append(out, toSettlementDTO(v))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleListOutstanding は未消込（消込候補）一覧を返す（InvoiceID 昇順）。
+func (s *server) handleListOutstanding(w http.ResponseWriter, _ *http.Request) {
+	views := s.deps.Settlement.ListOutstanding()
+	sort.Slice(views, func(i, j int) bool { return views[i].InvoiceID < views[j].InvoiceID })
+	out := make([]outstandingDTO, 0, len(views))
+	for _, v := range views {
+		out = append(out, toOutstandingDTO(v))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleImportBankDeposits は銀行入金データ取込バッチを受け付ける。
+func (s *server) handleImportBankDeposits(w http.ResponseWriter, r *http.Request) {
+	var req importDepositsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "リクエストボディを解釈できません")
+		return
+	}
+	inputs := make([]settlement.DepositInput, 0, len(req.Deposits))
+	for _, d := range req.Deposits {
+		currency := d.Amount.Currency
+		if currency == "" {
+			currency = "JPY"
+		}
+		inputs = append(inputs, settlement.DepositInput{
+			Reference: d.Reference,
+			Account:   shared.BillingAccountID(d.Account),
+			PayerName: d.PayerName,
+			Amount:    shared.Money{Amount: d.Amount.Amount, Currency: currency},
+		})
+	}
+	if err := s.deps.Settlement.ImportBankDeposits(r.Context(), inputs); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]int{"imported": len(inputs)})
+}
+
+// handleReconcileManually はオペレータによる手動消込を受け付ける。
+func (s *server) handleReconcileManually(w http.ResponseWriter, r *http.Request) {
+	var req manualReconcileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "リクエストボディを解釈できません")
+		return
+	}
+	if req.InvoiceID == "" {
+		writeError(w, http.StatusBadRequest, "missing_field", "invoiceId は必須です")
+		return
+	}
+	currency := req.Amount.Currency
+	if currency == "" {
+		currency = "JPY"
+	}
+	amount := shared.Money{Amount: req.Amount.Amount, Currency: currency}
+	err := s.deps.Settlement.ReconcileManually(r.Context(), shared.InvoiceID(req.InvoiceID), amount)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusAccepted, map[string]string{"invoiceId": req.InvoiceID})
+	case errors.Is(err, settlement.ErrNotOutstanding):
+		writeError(w, http.StatusNotFound, "not_found", "未消込の請求が見つかりません")
+	case errors.Is(err, settlement.ErrOverApplication):
+		writeError(w, http.StatusConflict, "over_application", "残額を超える消込はできません")
+	case errors.Is(err, settlement.ErrCurrencyMismatch):
+		writeError(w, http.StatusBadRequest, "currency_mismatch", "通貨が一致しません")
+	default:
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+	}
 }
 
 func (s *server) handleMetrics(w http.ResponseWriter, _ *http.Request) {

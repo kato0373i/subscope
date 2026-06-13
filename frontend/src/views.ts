@@ -4,4 +4,5 @@ export type View =
   | "operations"
   | "contracts"
   | "collections"
+  | "settlement"
   | "dunning";

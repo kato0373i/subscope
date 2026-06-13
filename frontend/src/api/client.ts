@@ -4,9 +4,13 @@ import type {
   Contract,
   CollectionState,
   CustomerDetail,
+  DepositInput,
   DunningCampaign,
   InvoiceCollectionRow,
+  ManualReconcileInput,
+  OutstandingInvoice,
   RegisterContractInput,
+  Settlement,
 } from "./types";
 
 // 接続方針（#20 / #35 / #59）:
@@ -21,9 +25,13 @@ export interface SubscopeApi {
   listCollectionStates(): Promise<CollectionState[]>;
   getCustomerDetail(contractId: string): Promise<CustomerDetail>;
   listDunningCampaigns(): Promise<DunningCampaign[]>;
+  listSettlements(): Promise<Settlement[]>;
+  listOutstanding(): Promise<OutstandingInvoice[]>;
   registerContract(input: RegisterContractInput): Promise<{ id: string }>;
   triggerBilling(contractId: string): Promise<void>;
   runBilling(input: BillingRunInput): Promise<BillingRunResult>;
+  importBankDeposits(deposits: DepositInput[]): Promise<{ imported: number }>;
+  reconcileManually(input: ManualReconcileInput): Promise<{ invoiceId: string }>;
 }
 
 /** モックは読み取り専用。操作系は実 API（HttpApi）でのみ利用できる。 */
@@ -138,6 +146,38 @@ const mockDunningCampaigns: DunningCampaign[] = [
   },
 ];
 
+const mockSettlements: Settlement[] = [
+  {
+    settlementId: "STL-0001",
+    invoiceId: "INV-0001",
+    amount: jpy(3000),
+    reconciled: jpy(3000),
+    fullyApplied: true,
+  },
+  {
+    settlementId: "STL-0002",
+    invoiceId: "INV-0005",
+    amount: jpy(8000),
+    reconciled: jpy(5000),
+    fullyApplied: false,
+  },
+];
+
+const mockOutstanding: OutstandingInvoice[] = [
+  {
+    invoiceId: "INV-0003",
+    account: "BA-0002",
+    payerName: "佐藤 花子",
+    outstanding: jpy(5000),
+  },
+  {
+    invoiceId: "INV-0002",
+    account: "BA-0003",
+    payerName: "鈴木 一郎",
+    outstanding: jpy(3000),
+  },
+];
+
 /** MockApi はバックエンド API 整備前の暫定データ源。決定的なサンプルを返す（読み取り専用）。 */
 export class MockApi implements SubscopeApi {
   /** 契約一覧のサンプルを返す。 */
@@ -194,6 +234,16 @@ export class MockApi implements SubscopeApi {
     return Promise.resolve(mockDunningCampaigns);
   }
 
+  /** 消込実績のサンプルを返す。 */
+  listSettlements(): Promise<Settlement[]> {
+    return Promise.resolve(mockSettlements);
+  }
+
+  /** 未消込（消込候補）のサンプルを返す。 */
+  listOutstanding(): Promise<OutstandingInvoice[]> {
+    return Promise.resolve(mockOutstanding);
+  }
+
   /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   registerContract(): Promise<{ id: string }> {
     return Promise.resolve(notSupported());
@@ -206,6 +256,16 @@ export class MockApi implements SubscopeApi {
 
   /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   runBilling(): Promise<BillingRunResult> {
+    return Promise.resolve(notSupported());
+  }
+
+  /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
+  importBankDeposits(): Promise<{ imported: number }> {
+    return Promise.resolve(notSupported());
+  }
+
+  /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
+  reconcileManually(): Promise<{ invoiceId: string }> {
     return Promise.resolve(notSupported());
   }
 }
@@ -240,6 +300,16 @@ export class HttpApi implements SubscopeApi {
     return this.get<DunningCampaign[]>("/api/dunning-campaigns");
   }
 
+  /** 消込実績一覧を取得する（GET /api/settlements）。 */
+  async listSettlements(): Promise<Settlement[]> {
+    return this.get<Settlement[]>("/api/settlements");
+  }
+
+  /** 未消込（消込候補）一覧を取得する（GET /api/settlements/outstanding）。 */
+  async listOutstanding(): Promise<OutstandingInvoice[]> {
+    return this.get<OutstandingInvoice[]>("/api/settlements/outstanding");
+  }
+
   /** 契約を登録する（POST /api/contracts）。 */
   async registerContract(input: RegisterContractInput): Promise<{ id: string }> {
     return this.post<{ id: string }>("/api/contracts", input);
@@ -253,6 +323,20 @@ export class HttpApi implements SubscopeApi {
   /** Billing Run（定期請求の自動起票）を実行する（POST /api/billing-runs）。 */
   async runBilling(input: BillingRunInput): Promise<BillingRunResult> {
     return this.post<BillingRunResult>("/api/billing-runs", input);
+  }
+
+  /** 銀行入金データを取り込む（POST /api/bank-deposits）。 */
+  async importBankDeposits(
+    deposits: DepositInput[],
+  ): Promise<{ imported: number }> {
+    return this.post<{ imported: number }>("/api/bank-deposits", { deposits });
+  }
+
+  /** オペレータによる手動消込を行う（POST /api/settlements/manual）。 */
+  async reconcileManually(
+    input: ManualReconcileInput,
+  ): Promise<{ invoiceId: string }> {
+    return this.post<{ invoiceId: string }>("/api/settlements/manual", input);
   }
 
   /** GET リクエストを送り JSON を返す共通ヘルパー。 */

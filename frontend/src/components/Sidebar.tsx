@@ -6,6 +6,7 @@ import {
   IconDashboard,
   IconDunning,
   IconOperations,
+  IconSettlement,
 } from "./icons";
 
 interface Props {
@@ -18,6 +19,7 @@ const items: { key: View; label: string; icon: ReactNode }[] = [
   { key: "operations", label: "登録・操作", icon: <IconOperations /> },
   { key: "contracts", label: "契約", icon: <IconContract /> },
   { key: "collections", label: "請求・回収", icon: <IconCollection /> },
+  { key: "settlement", label: "入金・消込", icon: <IconSettlement /> },
   { key: "dunning", label: "督促", icon: <IconDunning /> },
 ];
 

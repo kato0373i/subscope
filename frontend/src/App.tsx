@@ -14,6 +14,7 @@ import {
 import type { View } from "./views";
 import { Sidebar } from "./components/Sidebar";
 import { Operations } from "./components/Operations";
+import { Settlements } from "./components/Settlements";
 import { MetricCard } from "./components/MetricCard";
 import { StatusPill } from "./components/StatusPill";
 import { CustomerDrawer } from "./components/CustomerDrawer";
@@ -25,6 +26,7 @@ const pageMeta: Record<View, { title: string; subtitle: string }> = {
   operations: { title: "登録・操作", subtitle: "契約登録・請求実行・Billing Run" },
   contracts: { title: "契約", subtitle: "契約の一覧と状態・請求実行" },
   collections: { title: "請求・回収", subtitle: "請求書ごとの入金・回収状況" },
+  settlement: { title: "入金・消込", subtitle: "銀行入金の取込・自動照合・手動消込" },
   dunning: { title: "督促", subtitle: "未収に対する督促キャンペーンの進行状況" },
 };
 
@@ -184,6 +186,10 @@ function App() {
 
               {view === "operations" && (
                 <Operations api={api} notify={notify} refresh={refresh} />
+              )}
+
+              {view === "settlement" && (
+                <Settlements api={api} notify={notify} refresh={refresh} />
               )}
 
               {showContracts && (

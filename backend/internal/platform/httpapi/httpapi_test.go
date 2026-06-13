@@ -15,6 +15,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/platform/httpapi"
+	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
 
@@ -66,6 +67,28 @@ func (s *stubMetrics) Snapshot() metrics.Snapshot { return s.snap }
 type stubDunning struct{ views []dunning.CampaignView }
 
 func (s *stubDunning) ListCampaigns() []dunning.CampaignView { return s.views }
+
+type stubSettlement struct {
+	settlements []settlement.SettlementView
+	outstanding []settlement.OutstandingView
+	imported    []settlement.DepositInput
+	reconciled  []shared.InvoiceID
+	reconcErr   error
+}
+
+func (s *stubSettlement) ListSettlements() []settlement.SettlementView  { return s.settlements }
+func (s *stubSettlement) ListOutstanding() []settlement.OutstandingView { return s.outstanding }
+func (s *stubSettlement) ImportBankDeposits(_ context.Context, inputs []settlement.DepositInput) error {
+	s.imported = append(s.imported, inputs...)
+	return nil
+}
+func (s *stubSettlement) ReconcileManually(_ context.Context, invoice shared.InvoiceID, _ shared.Money) error {
+	if s.reconcErr != nil {
+		return s.reconcErr
+	}
+	s.reconciled = append(s.reconciled, invoice)
+	return nil
+}
 
 func newTestServer(d httpapi.Deps) *httptest.Server {
 	return httptest.NewServer(httpapi.New(d))
@@ -308,6 +331,108 @@ func TestListDunningCampaigns(t *testing.T) {
 	}
 	if got[0].Status != "active" || got[0].StepsTriggered != 2 || got[0].StepsTotal != 3 || got[0].NextChannel != "letter" {
 		t.Errorf("DUN-0001 の写像が想定外: %+v", got[0])
+	}
+}
+
+func TestListSettlements_Sorted(t *testing.T) {
+	deps := httpapi.Deps{
+		Settlement: &stubSettlement{settlements: []settlement.SettlementView{
+			{SettlementID: "STL-0002", InvoiceID: "INV-0002", Amount: shared.JPY(5000), Reconciled: shared.JPY(3000), FullyApplied: false},
+			{SettlementID: "STL-0001", InvoiceID: "INV-0001", Amount: shared.JPY(3000), Reconciled: shared.JPY(3000), FullyApplied: true},
+		}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/settlements")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	var got []struct {
+		SettlementID string `json:"settlementId"`
+		FullyApplied bool   `json:"fullyApplied"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 || got[0].SettlementID != "STL-0001" || got[1].SettlementID != "STL-0002" {
+		t.Fatalf("SettlementID 昇順整列されていない: %+v", got)
+	}
+	if got[0].FullyApplied != true || got[1].FullyApplied != false {
+		t.Errorf("fullyApplied 写像が想定外: %+v", got)
+	}
+}
+
+func TestReconcileManually_Success(t *testing.T) {
+	ss := &stubSettlement{}
+	srv := newTestServer(httpapi.Deps{Settlement: ss})
+	defer srv.Close()
+
+	body := `{"invoiceId":"INV-0001","amount":{"amount":3000,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	if len(ss.reconciled) != 1 || ss.reconciled[0] != "INV-0001" {
+		t.Errorf("reconciled = %v, want [INV-0001]", ss.reconciled)
+	}
+}
+
+func TestReconcileManually_OverApplication(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Settlement: &stubSettlement{reconcErr: settlement.ErrOverApplication},
+	})
+	defer srv.Close()
+
+	body := `{"invoiceId":"INV-0001","amount":{"amount":9999,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestReconcileManually_NotFound(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Settlement: &stubSettlement{reconcErr: settlement.ErrNotOutstanding},
+	})
+	defer srv.Close()
+
+	body := `{"invoiceId":"UNKNOWN","amount":{"amount":3000,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestImportBankDeposits(t *testing.T) {
+	ss := &stubSettlement{}
+	srv := newTestServer(httpapi.Deps{Settlement: ss})
+	defer srv.Close()
+
+	body := `{"deposits":[{"reference":"R-1","account":"BA-0001","payerName":"ヤマダ","amount":{"amount":3000,"currency":"JPY"}}]}`
+	resp, err := http.Post(srv.URL+"/api/bank-deposits", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	if len(ss.imported) != 1 || ss.imported[0].Reference != "R-1" || ss.imported[0].Amount.Amount != 3000 {
+		t.Errorf("imported = %+v, want 1 件 R-1/3000", ss.imported)
 	}
 }
 

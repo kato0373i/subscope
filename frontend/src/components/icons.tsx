@@ -105,3 +105,13 @@ export function IconDunning({ size = 18 }: IconProps) {
     </svg>
   );
 }
+
+export function IconSettlement({ size = 18 }: IconProps) {
+  return (
+    <svg {...svgProps(size)}>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M2.5 9.5h19" />
+      <path d="M6 14.5h4" />
+    </svg>
+  );
+}

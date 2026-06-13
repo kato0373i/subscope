@@ -82,6 +82,27 @@ export interface DunningCampaign {
   nextChannel: string;
 }
 
+/** 消込実績の 1 行。GET /api/settlements に対応。 */
+export interface Settlement {
+  settlementId: string;
+  invoiceId: string;
+  /** 入金額。 */
+  amount: Money;
+  /** 充当済み額。 */
+  reconciled: Money;
+  /** 入金額の全額が充当済みか（false なら部分消込）。 */
+  fullyApplied: boolean;
+}
+
+/** 未消込の請求（消込候補）。GET /api/settlements/outstanding に対応。 */
+export interface OutstandingInvoice {
+  invoiceId: string;
+  account: string;
+  payerName: string;
+  /** 残額。 */
+  outstanding: Money;
+}
+
 // --- 操作（コマンド）系の入出力。バックエンド httpapi の REST 契約に対応。 ---
 
 /** 契約登録の入力（POST /api/contracts）。 */
@@ -115,4 +136,21 @@ export interface BillingRunResult {
   dryRun: boolean;
   items: BillingRunItem[];
   skipped: number;
+}
+
+/** 手動消込の入力（POST /api/settlements/manual）。 */
+export interface ManualReconcileInput {
+  invoiceId: string;
+  amount: Money;
+}
+
+/** 銀行入金取込の 1 レコード（POST /api/bank-deposits の deposits[]）。 */
+export interface DepositInput {
+  /** 入金参照番号（冪等キー）。 */
+  reference: string;
+  /** 振込人の請求先 ID。 */
+  account: string;
+  /** 振込人名義。 */
+  payerName: string;
+  amount: Money;
 }

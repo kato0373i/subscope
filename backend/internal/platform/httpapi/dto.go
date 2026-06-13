@@ -8,6 +8,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/contract"
 	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
+	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
 
@@ -94,6 +95,61 @@ func toDunningCampaignDTO(v dunning.CampaignView) dunningCampaignDTO {
 		StepsTotal:     v.StepsTotal,
 		NextChannel:    v.NextChannel,
 	}
+}
+
+// settlementDTO は frontend types.ts の Settlement に対応（消込実績の 1 行）。
+type settlementDTO struct {
+	SettlementID string   `json:"settlementId"`
+	InvoiceID    string   `json:"invoiceId"`
+	Amount       moneyDTO `json:"amount"`
+	Reconciled   moneyDTO `json:"reconciled"`
+	FullyApplied bool     `json:"fullyApplied"`
+}
+
+func toSettlementDTO(v settlement.SettlementView) settlementDTO {
+	return settlementDTO{
+		SettlementID: string(v.SettlementID),
+		InvoiceID:    string(v.InvoiceID),
+		Amount:       toMoney(v.Amount),
+		Reconciled:   toMoney(v.Reconciled),
+		FullyApplied: v.FullyApplied,
+	}
+}
+
+// outstandingDTO は frontend types.ts の OutstandingInvoice に対応（未消込の請求）。
+type outstandingDTO struct {
+	InvoiceID   string   `json:"invoiceId"`
+	Account     string   `json:"account"`
+	PayerName   string   `json:"payerName"`
+	Outstanding moneyDTO `json:"outstanding"`
+}
+
+func toOutstandingDTO(v settlement.OutstandingView) outstandingDTO {
+	return outstandingDTO{
+		InvoiceID:   string(v.InvoiceID),
+		Account:     string(v.Account),
+		PayerName:   v.PayerName,
+		Outstanding: toMoney(v.Outstanding),
+	}
+}
+
+// importDepositsRequest は POST /api/bank-deposits のリクエストボディ。
+type importDepositsRequest struct {
+	Deposits []depositInputDTO `json:"deposits"`
+}
+
+// depositInputDTO は銀行入金取込の 1 レコード。
+type depositInputDTO struct {
+	Reference string   `json:"reference"`
+	Account   string   `json:"account"`
+	PayerName string   `json:"payerName"`
+	Amount    moneyDTO `json:"amount"`
+}
+
+// manualReconcileRequest は POST /api/settlements/manual のリクエストボディ。
+type manualReconcileRequest struct {
+	InvoiceID string   `json:"invoiceId"`
+	Amount    moneyDTO `json:"amount"`
 }
 
 // metricsDTO は metrics.Snapshot の外向き表現。

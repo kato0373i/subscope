@@ -6,7 +6,9 @@ package httpapi
 import (
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
+	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
 
@@ -44,6 +46,110 @@ type invoiceDTO struct {
 	BillingAccountID string   `json:"billingAccountId"`
 	Amount           moneyDTO `json:"amount"`
 	Status           string   `json:"status"`
+}
+
+// customerDetailDTO は顧客個票（顧客360）の合成レスポンス。
+// contract / billing / collection の読み取りを契約単位に束ねる。
+type customerDetailDTO struct {
+	Contract contractDTO            `json:"contract"`
+	Invoices []invoiceCollectionRow `json:"invoices"`
+	Summary  customerSummaryDTO     `json:"summary"`
+}
+
+// invoiceCollectionRow は請求書 1 行に回収ステータスを合成したもの。
+// invoiceStatus は billing 由来の生ステータス、collectionStatus は
+// billing×collection を合成した画面用ステータス（既存 collectionStatusFor）。
+type invoiceCollectionRow struct {
+	InvoiceID        string   `json:"invoiceId"`
+	Amount           moneyDTO `json:"amount"`
+	InvoiceStatus    string   `json:"invoiceStatus"`
+	CollectionStatus string   `json:"collectionStatus"`
+}
+
+// customerSummaryDTO は個票上部に出す集計。outstanding=未入金合計、paid=入金済合計。
+type customerSummaryDTO struct {
+	InvoiceCount int      `json:"invoiceCount"`
+	Paid         moneyDTO `json:"paid"`         // collectionStatus == "paid" の合計
+	Outstanding  moneyDTO `json:"outstanding"`  // paid 以外の合計（債権残）
+	InCollection int      `json:"inCollection"` // collectionStatus == "in_collection" の件数
+}
+
+// dunningCampaignDTO は frontend types.ts の DunningCampaign に対応。
+type dunningCampaignDTO struct {
+	CampaignID     string `json:"campaignId"`
+	InvoiceID      string `json:"invoiceId"`
+	Account        string `json:"account"`
+	Status         string `json:"status"` // active / resolved / completed
+	StepsTriggered int    `json:"stepsTriggered"`
+	StepsTotal     int    `json:"stepsTotal"`
+	NextChannel    string `json:"nextChannel"` // 完了なら ""
+}
+
+func toDunningCampaignDTO(v dunning.CampaignView) dunningCampaignDTO {
+	return dunningCampaignDTO{
+		CampaignID:     string(v.CampaignID),
+		InvoiceID:      string(v.InvoiceID),
+		Account:        string(v.Account),
+		Status:         v.Status,
+		StepsTriggered: v.StepsTriggered,
+		StepsTotal:     v.StepsTotal,
+		NextChannel:    v.NextChannel,
+	}
+}
+
+// settlementDTO は frontend types.ts の Settlement に対応（消込実績の 1 行）。
+type settlementDTO struct {
+	SettlementID string   `json:"settlementId"`
+	InvoiceID    string   `json:"invoiceId"`
+	Amount       moneyDTO `json:"amount"`
+	Reconciled   moneyDTO `json:"reconciled"`
+	FullyApplied bool     `json:"fullyApplied"`
+}
+
+func toSettlementDTO(v settlement.SettlementView) settlementDTO {
+	return settlementDTO{
+		SettlementID: string(v.SettlementID),
+		InvoiceID:    string(v.InvoiceID),
+		Amount:       toMoney(v.Amount),
+		Reconciled:   toMoney(v.Reconciled),
+		FullyApplied: v.FullyApplied,
+	}
+}
+
+// outstandingDTO は frontend types.ts の OutstandingInvoice に対応（未消込の請求）。
+type outstandingDTO struct {
+	InvoiceID   string   `json:"invoiceId"`
+	Account     string   `json:"account"`
+	PayerName   string   `json:"payerName"`
+	Outstanding moneyDTO `json:"outstanding"`
+}
+
+func toOutstandingDTO(v settlement.OutstandingView) outstandingDTO {
+	return outstandingDTO{
+		InvoiceID:   string(v.InvoiceID),
+		Account:     string(v.Account),
+		PayerName:   v.PayerName,
+		Outstanding: toMoney(v.Outstanding),
+	}
+}
+
+// importDepositsRequest は POST /api/bank-deposits のリクエストボディ。
+type importDepositsRequest struct {
+	Deposits []depositInputDTO `json:"deposits"`
+}
+
+// depositInputDTO は銀行入金取込の 1 レコード。
+type depositInputDTO struct {
+	Reference string   `json:"reference"`
+	Account   string   `json:"account"`
+	PayerName string   `json:"payerName"`
+	Amount    moneyDTO `json:"amount"`
+}
+
+// manualReconcileRequest は POST /api/settlements/manual のリクエストボディ。
+type manualReconcileRequest struct {
+	InvoiceID string   `json:"invoiceId"`
+	Amount    moneyDTO `json:"amount"`
 }
 
 // metricsDTO は metrics.Snapshot の外向き表現。

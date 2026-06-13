@@ -12,8 +12,10 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/platform/httpapi"
+	"github.com/kato0373i/subscope/backend/internal/settlement"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
 
@@ -61,6 +63,32 @@ func (s *stubMembers) Name(id shared.MemberID) (string, bool) {
 type stubMetrics struct{ snap metrics.Snapshot }
 
 func (s *stubMetrics) Snapshot() metrics.Snapshot { return s.snap }
+
+type stubDunning struct{ views []dunning.CampaignView }
+
+func (s *stubDunning) ListCampaigns() []dunning.CampaignView { return s.views }
+
+type stubSettlement struct {
+	settlements []settlement.SettlementView
+	outstanding []settlement.OutstandingView
+	imported    []settlement.DepositInput
+	reconciled  []shared.InvoiceID
+	reconcErr   error
+}
+
+func (s *stubSettlement) ListSettlements() []settlement.SettlementView  { return s.settlements }
+func (s *stubSettlement) ListOutstanding() []settlement.OutstandingView { return s.outstanding }
+func (s *stubSettlement) ImportBankDeposits(_ context.Context, inputs []settlement.DepositInput) error {
+	s.imported = append(s.imported, inputs...)
+	return nil
+}
+func (s *stubSettlement) ReconcileManually(_ context.Context, invoice shared.InvoiceID, _ shared.Money) error {
+	if s.reconcErr != nil {
+		return s.reconcErr
+	}
+	s.reconciled = append(s.reconciled, invoice)
+	return nil
+}
 
 func newTestServer(d httpapi.Deps) *httptest.Server {
 	return httptest.NewServer(httpapi.New(d))
@@ -163,6 +191,248 @@ func TestCollectionStates_StatusComposition(t *testing.T) {
 		if want[g.InvoiceID] != g.Status {
 			t.Errorf("%s status = %q, want %q", g.InvoiceID, g.Status, want[g.InvoiceID])
 		}
+	}
+}
+
+func TestGetContract_Composition(t *testing.T) {
+	deps := httpapi.Deps{
+		Contracts: &stubContracts{views: []contract.ContractView{
+			{ID: "CT-0001", MemberID: "MEM-0001", BillingAccountID: "BA-0001", MonthlyFee: shared.JPY(3000), Status: "active"},
+			{ID: "CT-0002", MemberID: "MEM-0002", BillingAccountID: "BA-0002", MonthlyFee: shared.JPY(5000), Status: "active"},
+		}},
+		Invoices: &stubInvoices{views: []billing.InvoiceView{
+			{ID: "INV-0001", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "paid"},
+			{ID: "INV-0002", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "issued"},
+			{ID: "INV-0003", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "issued"},
+			{ID: "INV-0099", ContractID: "CT-0002", Amount: shared.JPY(5000), Status: "issued"}, // 別契約は混ざらない
+		}},
+		Cases: &stubCases{views: []collection.CaseView{
+			{InvoiceID: "INV-0002", Status: "in_progress"}, // → in_collection
+		}},
+		Members: &stubMembers{names: map[shared.MemberID]string{"MEM-0001": "山田 太郎"}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/contracts/CT-0001")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got struct {
+		Contract struct {
+			ID         string `json:"id"`
+			MemberName string `json:"memberName"`
+		} `json:"contract"`
+		Invoices []struct {
+			InvoiceID        string `json:"invoiceId"`
+			CollectionStatus string `json:"collectionStatus"`
+		} `json:"invoices"`
+		Summary struct {
+			InvoiceCount int `json:"invoiceCount"`
+			Paid         struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"paid"`
+			Outstanding struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"outstanding"`
+			InCollection int `json:"inCollection"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if got.Contract.MemberName != "山田 太郎" {
+		t.Errorf("memberName = %q, want 山田 太郎", got.Contract.MemberName)
+	}
+	if len(got.Invoices) != 3 {
+		t.Fatalf("invoices len = %d, want 3 (別契約 INV-0099 は除外)", len(got.Invoices))
+	}
+	colByID := map[string]string{}
+	for _, r := range got.Invoices {
+		colByID[r.InvoiceID] = r.CollectionStatus
+	}
+	if colByID["INV-0001"] != "paid" || colByID["INV-0002"] != "in_collection" || colByID["INV-0003"] != "issued" {
+		t.Errorf("collectionStatus 合成が想定外: %v", colByID)
+	}
+	if got.Summary.InvoiceCount != 3 {
+		t.Errorf("invoiceCount = %d, want 3", got.Summary.InvoiceCount)
+	}
+	if got.Summary.Paid.Amount != 3000 || got.Summary.Paid.Currency != "JPY" {
+		t.Errorf("paid = %d %s, want 3000 JPY", got.Summary.Paid.Amount, got.Summary.Paid.Currency)
+	}
+	if got.Summary.Outstanding.Amount != 6000 || got.Summary.Outstanding.Currency != "JPY" {
+		t.Errorf("outstanding = %d %s, want 6000 JPY", got.Summary.Outstanding.Amount, got.Summary.Outstanding.Currency)
+	}
+	if got.Summary.InCollection != 1 {
+		t.Errorf("inCollection = %d, want 1", got.Summary.InCollection)
+	}
+}
+
+func TestGetContract_NotFound(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Contracts: &stubContracts{},
+		Members:   &stubMembers{names: map[shared.MemberID]string{}},
+	})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/contracts/UNKNOWN")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestListDunningCampaigns(t *testing.T) {
+	deps := httpapi.Deps{
+		Dunning: &stubDunning{views: []dunning.CampaignView{
+			// 意図的に逆順で渡し、ハンドラが CampaignID 昇順へ整列することを確認する。
+			{CampaignID: "DUN-0002", InvoiceID: "INV-0002", Account: "BA-0002", Status: "resolved", StepsTriggered: 1, StepsTotal: 3, NextChannel: "sms"},
+			{CampaignID: "DUN-0001", InvoiceID: "INV-0001", Account: "BA-0001", Status: "active", StepsTriggered: 2, StepsTotal: 3, NextChannel: "letter"},
+		}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/dunning-campaigns")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got []struct {
+		CampaignID     string `json:"campaignId"`
+		Status         string `json:"status"`
+		StepsTriggered int    `json:"stepsTriggered"`
+		StepsTotal     int    `json:"stepsTotal"`
+		NextChannel    string `json:"nextChannel"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].CampaignID != "DUN-0001" || got[1].CampaignID != "DUN-0002" {
+		t.Errorf("CampaignID 昇順整列されていない: %s, %s", got[0].CampaignID, got[1].CampaignID)
+	}
+	if got[0].Status != "active" || got[0].StepsTriggered != 2 || got[0].StepsTotal != 3 || got[0].NextChannel != "letter" {
+		t.Errorf("DUN-0001 の写像が想定外: %+v", got[0])
+	}
+}
+
+func TestListSettlements_Sorted(t *testing.T) {
+	deps := httpapi.Deps{
+		Settlement: &stubSettlement{settlements: []settlement.SettlementView{
+			{SettlementID: "STL-0002", InvoiceID: "INV-0002", Amount: shared.JPY(5000), Reconciled: shared.JPY(3000), FullyApplied: false},
+			{SettlementID: "STL-0001", InvoiceID: "INV-0001", Amount: shared.JPY(3000), Reconciled: shared.JPY(3000), FullyApplied: true},
+		}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/settlements")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	var got []struct {
+		SettlementID string `json:"settlementId"`
+		FullyApplied bool   `json:"fullyApplied"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 || got[0].SettlementID != "STL-0001" || got[1].SettlementID != "STL-0002" {
+		t.Fatalf("SettlementID 昇順整列されていない: %+v", got)
+	}
+	if got[0].FullyApplied != true || got[1].FullyApplied != false {
+		t.Errorf("fullyApplied 写像が想定外: %+v", got)
+	}
+}
+
+func TestReconcileManually_Success(t *testing.T) {
+	ss := &stubSettlement{}
+	srv := newTestServer(httpapi.Deps{Settlement: ss})
+	defer srv.Close()
+
+	body := `{"invoiceId":"INV-0001","amount":{"amount":3000,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	if len(ss.reconciled) != 1 || ss.reconciled[0] != "INV-0001" {
+		t.Errorf("reconciled = %v, want [INV-0001]", ss.reconciled)
+	}
+}
+
+func TestReconcileManually_OverApplication(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Settlement: &stubSettlement{reconcErr: settlement.ErrOverApplication},
+	})
+	defer srv.Close()
+
+	body := `{"invoiceId":"INV-0001","amount":{"amount":9999,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestReconcileManually_NotFound(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Settlement: &stubSettlement{reconcErr: settlement.ErrNotOutstanding},
+	})
+	defer srv.Close()
+
+	body := `{"invoiceId":"UNKNOWN","amount":{"amount":3000,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestImportBankDeposits(t *testing.T) {
+	ss := &stubSettlement{}
+	srv := newTestServer(httpapi.Deps{Settlement: ss})
+	defer srv.Close()
+
+	body := `{"deposits":[{"reference":"R-1","account":"BA-0001","payerName":"ヤマダ","amount":{"amount":3000,"currency":"JPY"}}]}`
+	resp, err := http.Post(srv.URL+"/api/bank-deposits", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
+	}
+	if len(ss.imported) != 1 || ss.imported[0].Reference != "R-1" || ss.imported[0].Amount.Amount != 3000 {
+		t.Errorf("imported = %+v, want 1 件 R-1/3000", ss.imported)
 	}
 }
 

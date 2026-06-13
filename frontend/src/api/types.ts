@@ -40,6 +40,69 @@ export interface CollectionState {
   status: CollectionStatus;
 }
 
+/** 請求書 1 行 + 回収ステータス（顧客個票用）。GET /api/contracts/{id} の invoices[]。 */
+export interface InvoiceCollectionRow {
+  invoiceId: string;
+  amount: Money;
+  /** billing 由来の生ステータス（issued / paid …）。 */
+  invoiceStatus: string;
+  /** billing×collection を合成した画面用ステータス。 */
+  collectionStatus: CollectionStatus;
+}
+
+/** 顧客個票（顧客360）。GET /api/contracts/{id} に対応。 */
+export interface CustomerDetail {
+  contract: Contract;
+  invoices: InvoiceCollectionRow[];
+  summary: {
+    invoiceCount: number;
+    /** 入金済み合計。 */
+    paid: Money;
+    /** 未入金合計（債権残）。 */
+    outstanding: Money;
+    /** 回収中の件数。 */
+    inCollection: number;
+  };
+}
+
+/** 督促キャンペーンの状態。バックエンド dunning の状態機械に対応。 */
+export type DunningStatus = "active" | "resolved" | "completed";
+
+/** 督促キャンペーンの 1 行。GET /api/dunning-campaigns に対応。 */
+export interface DunningCampaign {
+  campaignId: string;
+  invoiceId: string;
+  account: string;
+  status: DunningStatus;
+  /** 実施済みステップ数。 */
+  stepsTriggered: number;
+  /** 全ステップ数。 */
+  stepsTotal: number;
+  /** 次に発火するチャネル（email/sms/letter）。完了なら ""。 */
+  nextChannel: string;
+}
+
+/** 消込実績の 1 行。GET /api/settlements に対応。 */
+export interface Settlement {
+  settlementId: string;
+  invoiceId: string;
+  /** 入金額。 */
+  amount: Money;
+  /** 充当済み額。 */
+  reconciled: Money;
+  /** 入金額の全額が充当済みか（false なら部分消込）。 */
+  fullyApplied: boolean;
+}
+
+/** 未消込の請求（消込候補）。GET /api/settlements/outstanding に対応。 */
+export interface OutstandingInvoice {
+  invoiceId: string;
+  account: string;
+  payerName: string;
+  /** 残額。 */
+  outstanding: Money;
+}
+
 // --- 操作（コマンド）系の入出力。バックエンド httpapi の REST 契約に対応。 ---
 
 /** 契約登録の入力（POST /api/contracts）。 */
@@ -73,4 +136,21 @@ export interface BillingRunResult {
   dryRun: boolean;
   items: BillingRunItem[];
   skipped: number;
+}
+
+/** 手動消込の入力（POST /api/settlements/manual）。 */
+export interface ManualReconcileInput {
+  invoiceId: string;
+  amount: Money;
+}
+
+/** 銀行入金取込の 1 レコード（POST /api/bank-deposits の deposits[]）。 */
+export interface DepositInput {
+  /** 入金参照番号（冪等キー）。 */
+  reference: string;
+  /** 振込人の請求先 ID。 */
+  account: string;
+  /** 振込人名義。 */
+  payerName: string;
+  amount: Money;
 }

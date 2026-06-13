@@ -96,3 +96,14 @@ func (c *Campaign) BackfillAccount(account shared.BillingAccountID) bool {
 
 // Triggered は実施済みステップ数。
 func (c *Campaign) Triggered() int { return c.triggered }
+
+// Total はシーケンスの全ステップ数。
+func (c *Campaign) Total() int { return len(c.steps) }
+
+// NextChannel は次に発火するチャネルを返す（全ステップ実施済みなら ""）。
+func (c *Campaign) NextChannel() Channel {
+	if c.triggered >= len(c.steps) {
+		return ""
+	}
+	return c.steps[c.triggered].Channel
+}

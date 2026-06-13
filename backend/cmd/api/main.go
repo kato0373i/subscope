@@ -52,8 +52,8 @@ func main() {
 	invoices := billing.NewService(bus)
 	cases := collection.NewService(bus)
 	_ = payment.NewService(bus)
-	_ = settlement.NewService(bus)
-	_ = dunning.NewService(bus)
+	settlementSvc := settlement.NewService(bus)
+	dunningSvc := dunning.NewService(bus)
 	_ = notification.NewService(bus)
 	_ = creditnote.NewService(bus)
 
@@ -160,11 +160,13 @@ func main() {
 
 	// HTTP API を常駐起動する。デモで投入したシードデータがそのまま API から見える。
 	var handler http.Handler = httpapi.New(httpapi.Deps{
-		Contracts: contracts,
-		Invoices:  invoices,
-		Cases:     cases,
-		Members:   members,
-		Metrics:   mtr,
+		Contracts:  contracts,
+		Invoices:   invoices,
+		Cases:      cases,
+		Members:    members,
+		Metrics:    mtr,
+		Dunning:    dunningSvc,
+		Settlement: settlementSvc,
 	})
 
 	// STATIC_DIR が指定されていれば、ビルド済みフロントを同一オリジンで配信する。

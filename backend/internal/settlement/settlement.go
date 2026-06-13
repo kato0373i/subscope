@@ -5,6 +5,7 @@ package settlement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -12,6 +13,32 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/shared"
 	"github.com/kato0373i/subscope/backend/internal/shared/events"
 )
+
+// ErrNotOutstanding は手動消込の対象（未消込の請求）が見つからない場合に返る。
+var ErrNotOutstanding = errors.New("settlement: 未消込の請求が見つかりません")
+
+// 過充当・通貨不一致を呼び出し側（HTTP層など）が分類できるよう再エクスポートする。
+var (
+	ErrOverApplication  = domain.ErrOverApplication
+	ErrCurrencyMismatch = domain.ErrCurrencyMismatch
+)
+
+// SettlementView は消込実績の外向き読み取りビュー。
+type SettlementView struct {
+	SettlementID shared.SettlementID
+	InvoiceID    shared.InvoiceID
+	Amount       shared.Money // 入金額
+	Reconciled   shared.Money // 充当済み
+	FullyApplied bool         // 入金額の全額が充当済みか（部分消込の可視化）
+}
+
+// OutstandingView は未消込の請求（消込候補）。手動消込画面の対象一覧。
+type OutstandingView struct {
+	InvoiceID   shared.InvoiceID
+	Account     shared.BillingAccountID
+	PayerName   string
+	Outstanding shared.Money
+}
 
 // DepositInput は銀行入金データ取込の 1 レコード（取込バッチの入力）。
 // 実運用では銀行 CSV/全銀フォーマットを ACL でこの形に正規化する想定。
@@ -32,7 +59,12 @@ type Service struct {
 	deposits    map[shared.SettlementID]*domain.BankDeposit
 	// outstanding は未消込の請求の投影。InvoiceIssued で積み、消込が進むと減らす。
 	outstanding map[shared.InvoiceID]*domain.Candidate
-	payerName   PayerNameResolver
+	// applied は請求ごとの消込累計。発行(InvoiceIssued)が決済(PaymentSucceeded)より
+	// 後着しても支払済み請求を未消込に積まないよう、純未消込＝発行額−消込累計 を求めるために持つ。
+	// インメモリ同期バスでは collection が InvoiceIssued 配信中に決済まで誘発するため、
+	// settlement の発行購読が決済後に走る順序が起こりうる（その救済）。
+	applied   map[shared.InvoiceID]shared.Money
+	payerName PayerNameResolver
 	// seen は消込済みの入金トランザクション。PSP の二重通知による二重消込を防ぐ。
 	seen map[shared.TransactionID]bool
 	// seenRefs は取込済みの入金参照番号。同一入金の二重取込を防ぐ。
@@ -54,6 +86,7 @@ func NewServiceWithPayerNames(bus shared.EventBus, resolver PayerNameResolver) *
 		settlements: make(map[shared.SettlementID]*domain.Settlement),
 		deposits:    make(map[shared.SettlementID]*domain.BankDeposit),
 		outstanding: make(map[shared.InvoiceID]*domain.Candidate),
+		applied:     make(map[shared.InvoiceID]shared.Money),
 		payerName:   resolver,
 		seen:        make(map[shared.TransactionID]bool),
 		seenRefs:    make(map[string]bool),
@@ -67,6 +100,17 @@ func NewServiceWithPayerNames(bus shared.EventBus, resolver PayerNameResolver) *
 
 func (s *Service) onInvoiceIssued(_ context.Context, e shared.Event) error {
 	ev := e.(events.InvoiceIssued)
+
+	// 純未消込＝発行額−既消込累計。発行が決済より後着した場合（同期バスで collection が
+	// InvoiceIssued 配信中に決済まで誘発する順序）でも、支払済み請求を未消込に積まない。
+	outstanding := ev.Amount
+	if a, ok := s.applied[ev.InvoiceID]; ok && a.Currency == ev.Amount.Currency {
+		if a.Amount >= ev.Amount.Amount {
+			return nil // 既に全額消込済み。未消込投影は作らない。
+		}
+		outstanding = shared.Money{Amount: ev.Amount.Amount - a.Amount, Currency: ev.Amount.Currency}
+	}
+
 	name := ""
 	if s.payerName != nil {
 		name = s.payerName(ev.BillingAccountID)
@@ -75,7 +119,7 @@ func (s *Service) onInvoiceIssued(_ context.Context, e shared.Event) error {
 		Invoice:     ev.InvoiceID,
 		Account:     ev.BillingAccountID,
 		PayerName:   name,
-		Outstanding: ev.Amount,
+		Outstanding: outstanding,
 	}
 	return nil
 }
@@ -166,7 +210,7 @@ func (s *Service) ImportBankDeposits(ctx context.Context, inputs []DepositInput)
 func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error {
 	c, ok := s.outstanding[invoice]
 	if !ok {
-		return fmt.Errorf("settlement: 未消込の請求が見つかりません invoice=%s", invoice)
+		return fmt.Errorf("%w invoice=%s", ErrNotOutstanding, invoice)
 	}
 	if amount.Currency != c.Outstanding.Currency {
 		return domain.ErrCurrencyMismatch
@@ -178,8 +222,53 @@ func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceI
 	return s.applyToInvoice(ctx, invoice, amount)
 }
 
+// ListSettlements は消込実績の一覧を返す。
+// map 反復は順不同のため、呼び出し側で安定ソートする想定（SettlementID 昇順）。
+func (s *Service) ListSettlements() []SettlementView {
+	out := make([]SettlementView, 0, len(s.settlements))
+	for _, st := range s.settlements {
+		out = append(out, SettlementView{
+			SettlementID: st.ID,
+			InvoiceID:    st.Invoice,
+			Amount:       st.Amount,
+			Reconciled:   st.Reconciled(),
+			FullyApplied: st.FullyReconciled(),
+		})
+	}
+	return out
+}
+
+// ListOutstanding は未消込の請求（消込候補）の一覧を返す。
+// 呼び出し側で安定ソートする想定（InvoiceID 昇順）。
+func (s *Service) ListOutstanding() []OutstandingView {
+	out := make([]OutstandingView, 0, len(s.outstanding))
+	for _, c := range s.outstanding {
+		out = append(out, OutstandingView{
+			InvoiceID:   c.Invoice,
+			Account:     c.Account,
+			PayerName:   c.PayerName,
+			Outstanding: c.Outstanding,
+		})
+	}
+	return out
+}
+
+// recordApplied は請求ごとの消込累計を加算する。初項はその通貨を採用する。
+func (s *Service) recordApplied(invoice shared.InvoiceID, amount shared.Money) {
+	cur, ok := s.applied[invoice]
+	if !ok || cur.Currency != amount.Currency {
+		s.applied[invoice] = amount
+		return
+	}
+	s.applied[invoice] = shared.Money{Amount: cur.Amount + amount.Amount, Currency: cur.Currency}
+}
+
 // applyToInvoice は請求の残額を減らし、全額充当なら InvoicePaid、一部なら InvoicePartiallyPaid を発行する。
 func (s *Service) applyToInvoice(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error {
+	// 消込累計を記録する。発行が決済より後着しても純未消込を正しく投影するため
+	// （outstanding の有無に関わらず累計する）。
+	s.recordApplied(invoice, amount)
+
 	c, ok := s.outstanding[invoice]
 	if !ok {
 		// 投影が無い（既に消込済み、または発行前のクレカ即時入金）。全額消込として扱う。

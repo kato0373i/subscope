@@ -66,6 +66,7 @@ func New(deps Deps) http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /api/contracts", s.handleListContracts)
+	mux.HandleFunc("GET /api/contracts/{id}", s.handleGetContract)
 	mux.HandleFunc("POST /api/contracts", s.handleRegisterContract)
 	mux.HandleFunc("POST /api/contracts/{id}/billing", s.handleTriggerBilling)
 	mux.HandleFunc("POST /api/billing-runs", s.handleRunBilling)
@@ -88,6 +89,94 @@ func (s *server) handleListContracts(w http.ResponseWriter, _ *http.Request) {
 		out = append(out, toContractDTO(v, name))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleGetContract は 1 契約の個票（顧客360）を返す。contract / billing / collection の
+// 読み取りを契約単位に合成する（ドメイン変更なし・公開 Service のみ参照）。
+func (s *server) handleGetContract(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing_id", "契約 ID が必要です")
+		return
+	}
+	cid := shared.ContractID(id)
+
+	// 契約ヘッダ。List を id でフィルタ（インメモリ前提・契約数は小さい）。
+	var view contract.ContractView
+	found := false
+	for _, v := range s.deps.Contracts.List() {
+		if v.ID == cid {
+			view = v
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "契約が見つかりません")
+		return
+	}
+	name, _ := s.deps.Members.Name(view.MemberID)
+
+	// 回収案件を InvoiceID で引けるよう投影（collection-states と同型）。
+	caseByInvoice := make(map[shared.InvoiceID]string)
+	for _, c := range s.deps.Cases.ListCases() {
+		caseByInvoice[c.InvoiceID] = c.Status
+	}
+
+	// この契約の請求書を束ね、各行の回収ステータスとサマリを合成する。
+	// 金額集計は通貨未設定のゼロから始め、初項で通貨を採用する（addMoneyDTO）。
+	rows := make([]invoiceCollectionRow, 0)
+	summary := customerSummaryDTO{}
+	for _, inv := range s.deps.Invoices.ListInvoices() {
+		if inv.ContractID != cid {
+			continue
+		}
+		caseStatus, hasCase := caseByInvoice[inv.ID]
+		colStatus := collectionStatusFor(inv.Status, caseStatus, hasCase)
+		rows = append(rows, invoiceCollectionRow{
+			InvoiceID:        string(inv.ID),
+			Amount:           toMoney(inv.Amount),
+			InvoiceStatus:    inv.Status,
+			CollectionStatus: colStatus,
+		})
+		summary.InvoiceCount++
+		switch colStatus {
+		case "paid":
+			summary.Paid = addMoneyDTO(summary.Paid, inv.Amount)
+		case "in_collection":
+			summary.InCollection++
+			summary.Outstanding = addMoneyDTO(summary.Outstanding, inv.Amount)
+		default:
+			summary.Outstanding = addMoneyDTO(summary.Outstanding, inv.Amount)
+		}
+	}
+
+	// 請求が無く通貨が未確定なら契約の月額通貨でゼロ表示にする。
+	if summary.Paid.Currency == "" {
+		summary.Paid.Currency = view.MonthlyFee.Currency
+	}
+	if summary.Outstanding.Currency == "" {
+		summary.Outstanding.Currency = view.MonthlyFee.Currency
+	}
+
+	writeJSON(w, http.StatusOK, customerDetailDTO{
+		Contract: toContractDTO(view, name),
+		Invoices: rows,
+		Summary:  summary,
+	})
+}
+
+// addMoneyDTO は集計用に moneyDTO へ shared.Money を加算する。
+// acc の通貨が未設定なら m の通貨を採用し（ゼロ初期値の初項を許容）、
+// 通貨不一致は加算せず据え置く（単一契約内は同一通貨の前提）。
+func addMoneyDTO(acc moneyDTO, m shared.Money) moneyDTO {
+	if acc.Currency == "" {
+		return moneyDTO{Amount: m.Amount, Currency: m.Currency}
+	}
+	if acc.Currency != m.Currency {
+		return acc
+	}
+	return moneyDTO{Amount: acc.Amount + m.Amount, Currency: acc.Currency}
 }
 
 func (s *server) handleRegisterContract(w http.ResponseWriter, r *http.Request) {

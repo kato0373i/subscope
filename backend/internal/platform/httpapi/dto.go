@@ -46,6 +46,32 @@ type invoiceDTO struct {
 	Status           string   `json:"status"`
 }
 
+// customerDetailDTO は顧客個票（顧客360）の合成レスポンス。
+// contract / billing / collection の読み取りを契約単位に束ねる。
+type customerDetailDTO struct {
+	Contract contractDTO            `json:"contract"`
+	Invoices []invoiceCollectionRow `json:"invoices"`
+	Summary  customerSummaryDTO     `json:"summary"`
+}
+
+// invoiceCollectionRow は請求書 1 行に回収ステータスを合成したもの。
+// invoiceStatus は billing 由来の生ステータス、collectionStatus は
+// billing×collection を合成した画面用ステータス（既存 collectionStatusFor）。
+type invoiceCollectionRow struct {
+	InvoiceID        string   `json:"invoiceId"`
+	Amount           moneyDTO `json:"amount"`
+	InvoiceStatus    string   `json:"invoiceStatus"`
+	CollectionStatus string   `json:"collectionStatus"`
+}
+
+// customerSummaryDTO は個票上部に出す集計。outstanding=未入金合計、paid=入金済合計。
+type customerSummaryDTO struct {
+	InvoiceCount int      `json:"invoiceCount"`
+	Paid         moneyDTO `json:"paid"`         // collectionStatus == "paid" の合計
+	Outstanding  moneyDTO `json:"outstanding"`  // paid 以外の合計（債権残）
+	InCollection int      `json:"inCollection"` // collectionStatus == "in_collection" の件数
+}
+
 // metricsDTO は metrics.Snapshot の外向き表現。
 type metricsDTO struct {
 	ActiveContracts  int      `json:"activeContracts"`

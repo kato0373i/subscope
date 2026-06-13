@@ -3,6 +3,8 @@ import type {
   BillingRunResult,
   Contract,
   CollectionState,
+  CustomerDetail,
+  InvoiceCollectionRow,
   RegisterContractInput,
 } from "./types";
 
@@ -16,6 +18,7 @@ import type {
 export interface SubscopeApi {
   listContracts(): Promise<Contract[]>;
   listCollectionStates(): Promise<CollectionState[]>;
+  getCustomerDetail(contractId: string): Promise<CustomerDetail>;
   registerContract(input: RegisterContractInput): Promise<{ id: string }>;
   triggerBilling(contractId: string): Promise<void>;
   runBilling(input: BillingRunInput): Promise<BillingRunResult>;
@@ -124,6 +127,45 @@ export class MockApi implements SubscopeApi {
     return Promise.resolve(mockCollectionStates);
   }
 
+  /** 顧客個票をモックデータからその場で合成して返す（オフラインでも画面確認可能）。 */
+  getCustomerDetail(contractId: string): Promise<CustomerDetail> {
+    const contract = mockContracts.find((c) => c.id === contractId);
+    if (!contract) {
+      return Promise.reject(new Error("契約が見つかりません"));
+    }
+    const states = mockCollectionStates.filter(
+      (s) => s.contractId === contractId,
+    );
+    const invoices: InvoiceCollectionRow[] = states.map((s) => ({
+      invoiceId: s.invoiceId,
+      amount: s.amount,
+      invoiceStatus: s.status === "paid" ? "paid" : "issued",
+      collectionStatus: s.status,
+    }));
+    const currency = contract.monthlyFee.currency;
+    let paid = 0;
+    let outstanding = 0;
+    let inCollection = 0;
+    for (const s of states) {
+      if (s.status === "paid") {
+        paid += s.amount.amount;
+      } else {
+        outstanding += s.amount.amount;
+        if (s.status === "in_collection") inCollection += 1;
+      }
+    }
+    return Promise.resolve({
+      contract,
+      invoices,
+      summary: {
+        invoiceCount: invoices.length,
+        paid: { amount: paid, currency },
+        outstanding: { amount: outstanding, currency },
+        inCollection,
+      },
+    });
+  }
+
   /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   registerContract(): Promise<{ id: string }> {
     return Promise.resolve(notSupported());
@@ -156,6 +198,13 @@ export class HttpApi implements SubscopeApi {
   /** 請求/回収状況を取得する（GET /api/collection-states）。 */
   async listCollectionStates(): Promise<CollectionState[]> {
     return this.get<CollectionState[]>("/api/collection-states");
+  }
+
+  /** 顧客個票（顧客360）を取得する（GET /api/contracts/{id}）。 */
+  async getCustomerDetail(contractId: string): Promise<CustomerDetail> {
+    return this.get<CustomerDetail>(
+      `/api/contracts/${encodeURIComponent(contractId)}`,
+    );
   }
 
   /** 契約を登録する（POST /api/contracts）。 */

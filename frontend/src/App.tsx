@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Operations } from "./components/Operations";
 import { MetricCard } from "./components/MetricCard";
 import { StatusPill } from "./components/StatusPill";
+import { CustomerDrawer } from "./components/CustomerDrawer";
 import { IconAlert, IconCheck, IconRevenue, IconUsers } from "./components/icons";
 import "./App.css";
 
@@ -38,6 +39,8 @@ function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   // 進行中の操作キー集合。行ごとに独立して二重送信を防ぐ（1 文字列だと別行操作で上書きされる）。
   const [busyActions, setBusyActions] = useState<Set<string>>(new Set());
+  // 顧客個票（顧客360）ドロワーで開いている契約 ID。null なら閉じている。
+  const [detailContractId, setDetailContractId] = useState<string | null>(null);
 
   /** 契約一覧と請求/回収状況を再取得して画面に反映する。 */
   const refresh = useCallback(async () => {
@@ -201,7 +204,12 @@ function App() {
                           </tr>
                         ) : (
                           contracts.map((c) => (
-                            <tr key={c.id}>
+                            <tr
+                              key={c.id}
+                              className="row--clickable"
+                              onClick={() => setDetailContractId(c.id)}
+                              title="クリックで顧客個票を開く"
+                            >
                               <td className="mono">{c.id}</td>
                               <td className="strong">{c.memberName}</td>
                               <td className="mono muted">{c.billingAccountId}</td>
@@ -217,7 +225,11 @@ function App() {
                                   type="button"
                                   className="btn btn--sm btn--ghost"
                                   disabled={busyActions.has(`bill-${c.id}`)}
-                                  onClick={() => triggerBilling(c.id)}
+                                  onClick={(e) => {
+                                    // 行クリック（個票オープン）と二重発火させない。
+                                    e.stopPropagation();
+                                    triggerBilling(c.id);
+                                  }}
                                 >
                                   {busyActions.has(`bill-${c.id}`) ? "実行中…" : "請求実行"}
                                 </button>
@@ -276,6 +288,12 @@ function App() {
           )}
         </main>
       </div>
+
+      <CustomerDrawer
+        api={api}
+        contractId={detailContractId}
+        onClose={() => setDetailContractId(null)}
+      />
 
       {toast && <div className={`toast toast--${toast.kind}`}>{toast.message}</div>}
     </div>

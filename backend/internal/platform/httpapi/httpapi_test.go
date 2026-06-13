@@ -166,6 +166,105 @@ func TestCollectionStates_StatusComposition(t *testing.T) {
 	}
 }
 
+func TestGetContract_Composition(t *testing.T) {
+	deps := httpapi.Deps{
+		Contracts: &stubContracts{views: []contract.ContractView{
+			{ID: "CT-0001", MemberID: "MEM-0001", BillingAccountID: "BA-0001", MonthlyFee: shared.JPY(3000), Status: "active"},
+			{ID: "CT-0002", MemberID: "MEM-0002", BillingAccountID: "BA-0002", MonthlyFee: shared.JPY(5000), Status: "active"},
+		}},
+		Invoices: &stubInvoices{views: []billing.InvoiceView{
+			{ID: "INV-0001", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "paid"},
+			{ID: "INV-0002", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "issued"},
+			{ID: "INV-0003", ContractID: "CT-0001", Amount: shared.JPY(3000), Status: "issued"},
+			{ID: "INV-0099", ContractID: "CT-0002", Amount: shared.JPY(5000), Status: "issued"}, // 別契約は混ざらない
+		}},
+		Cases: &stubCases{views: []collection.CaseView{
+			{InvoiceID: "INV-0002", Status: "in_progress"}, // → in_collection
+		}},
+		Members: &stubMembers{names: map[shared.MemberID]string{"MEM-0001": "山田 太郎"}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/contracts/CT-0001")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got struct {
+		Contract struct {
+			ID         string `json:"id"`
+			MemberName string `json:"memberName"`
+		} `json:"contract"`
+		Invoices []struct {
+			InvoiceID        string `json:"invoiceId"`
+			CollectionStatus string `json:"collectionStatus"`
+		} `json:"invoices"`
+		Summary struct {
+			InvoiceCount int `json:"invoiceCount"`
+			Paid         struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"paid"`
+			Outstanding struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"outstanding"`
+			InCollection int `json:"inCollection"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if got.Contract.MemberName != "山田 太郎" {
+		t.Errorf("memberName = %q, want 山田 太郎", got.Contract.MemberName)
+	}
+	if len(got.Invoices) != 3 {
+		t.Fatalf("invoices len = %d, want 3 (別契約 INV-0099 は除外)", len(got.Invoices))
+	}
+	colByID := map[string]string{}
+	for _, r := range got.Invoices {
+		colByID[r.InvoiceID] = r.CollectionStatus
+	}
+	if colByID["INV-0001"] != "paid" || colByID["INV-0002"] != "in_collection" || colByID["INV-0003"] != "issued" {
+		t.Errorf("collectionStatus 合成が想定外: %v", colByID)
+	}
+	if got.Summary.InvoiceCount != 3 {
+		t.Errorf("invoiceCount = %d, want 3", got.Summary.InvoiceCount)
+	}
+	if got.Summary.Paid.Amount != 3000 || got.Summary.Paid.Currency != "JPY" {
+		t.Errorf("paid = %d %s, want 3000 JPY", got.Summary.Paid.Amount, got.Summary.Paid.Currency)
+	}
+	if got.Summary.Outstanding.Amount != 6000 || got.Summary.Outstanding.Currency != "JPY" {
+		t.Errorf("outstanding = %d %s, want 6000 JPY", got.Summary.Outstanding.Amount, got.Summary.Outstanding.Currency)
+	}
+	if got.Summary.InCollection != 1 {
+		t.Errorf("inCollection = %d, want 1", got.Summary.InCollection)
+	}
+}
+
+func TestGetContract_NotFound(t *testing.T) {
+	srv := newTestServer(httpapi.Deps{
+		Contracts: &stubContracts{},
+		Members:   &stubMembers{names: map[shared.MemberID]string{}},
+	})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/contracts/UNKNOWN")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
 func TestRegisterContract(t *testing.T) {
 	sc := &stubContracts{}
 	srv := newTestServer(httpapi.Deps{Contracts: sc})

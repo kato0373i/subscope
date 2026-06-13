@@ -40,6 +40,31 @@ export interface CollectionState {
   status: CollectionStatus;
 }
 
+/** 請求書 1 行 + 回収ステータス（顧客個票用）。GET /api/contracts/{id} の invoices[]。 */
+export interface InvoiceCollectionRow {
+  invoiceId: string;
+  amount: Money;
+  /** billing 由来の生ステータス（issued / paid …）。 */
+  invoiceStatus: string;
+  /** billing×collection を合成した画面用ステータス。 */
+  collectionStatus: CollectionStatus;
+}
+
+/** 顧客個票（顧客360）。GET /api/contracts/{id} に対応。 */
+export interface CustomerDetail {
+  contract: Contract;
+  invoices: InvoiceCollectionRow[];
+  summary: {
+    invoiceCount: number;
+    /** 入金済み合計。 */
+    paid: Money;
+    /** 未入金合計（債権残）。 */
+    outstanding: Money;
+    /** 回収中の件数。 */
+    inCollection: number;
+  };
+}
+
 // --- 操作（コマンド）系の入出力。バックエンド httpapi の REST 契約に対応。 ---
 
 /** 契約登録の入力（POST /api/contracts）。 */

@@ -4,6 +4,7 @@ import type {
   Contract,
   CollectionState,
   CustomerDetail,
+  DunningCampaign,
   InvoiceCollectionRow,
   RegisterContractInput,
 } from "./types";
@@ -19,6 +20,7 @@ export interface SubscopeApi {
   listContracts(): Promise<Contract[]>;
   listCollectionStates(): Promise<CollectionState[]>;
   getCustomerDetail(contractId: string): Promise<CustomerDetail>;
+  listDunningCampaigns(): Promise<DunningCampaign[]>;
   registerContract(input: RegisterContractInput): Promise<{ id: string }>;
   triggerBilling(contractId: string): Promise<void>;
   runBilling(input: BillingRunInput): Promise<BillingRunResult>;
@@ -115,6 +117,27 @@ const mockCollectionStates: CollectionState[] = [
   },
 ];
 
+const mockDunningCampaigns: DunningCampaign[] = [
+  {
+    campaignId: "DUN-0001",
+    invoiceId: "INV-0002",
+    account: "BA-0003",
+    status: "active",
+    stepsTriggered: 2,
+    stepsTotal: 3,
+    nextChannel: "letter",
+  },
+  {
+    campaignId: "DUN-0002",
+    invoiceId: "INV-0006",
+    account: "BA-0005",
+    status: "completed",
+    stepsTriggered: 3,
+    stepsTotal: 3,
+    nextChannel: "",
+  },
+];
+
 /** MockApi はバックエンド API 整備前の暫定データ源。決定的なサンプルを返す（読み取り専用）。 */
 export class MockApi implements SubscopeApi {
   /** 契約一覧のサンプルを返す。 */
@@ -166,6 +189,11 @@ export class MockApi implements SubscopeApi {
     });
   }
 
+  /** 督促キャンペーンのサンプルを返す。 */
+  listDunningCampaigns(): Promise<DunningCampaign[]> {
+    return Promise.resolve(mockDunningCampaigns);
+  }
+
   /** 操作系はモックでは未対応（実 API でのみ利用可）。 */
   registerContract(): Promise<{ id: string }> {
     return Promise.resolve(notSupported());
@@ -205,6 +233,11 @@ export class HttpApi implements SubscopeApi {
     return this.get<CustomerDetail>(
       `/api/contracts/${encodeURIComponent(contractId)}`,
     );
+  }
+
+  /** 督促キャンペーン一覧を取得する（GET /api/dunning-campaigns）。 */
+  async listDunningCampaigns(): Promise<DunningCampaign[]> {
+    return this.get<DunningCampaign[]>("/api/dunning-campaigns");
   }
 
   /** 契約を登録する（POST /api/contracts）。 */

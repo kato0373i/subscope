@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
@@ -45,6 +47,11 @@ type MetricsReader interface {
 	Snapshot() metrics.Snapshot
 }
 
+// DunningLister は督促キャンペーン一覧を提供する。
+type DunningLister interface {
+	ListCampaigns() []dunning.CampaignView
+}
+
 // Deps は HTTP 層が依存する各モジュールの公開 API。
 type Deps struct {
 	Contracts ContractReader
@@ -52,6 +59,7 @@ type Deps struct {
 	Cases     CaseReader
 	Members   MemberNamer
 	Metrics   MetricsReader
+	Dunning   DunningLister
 }
 
 // server はルーティングとハンドラを束ねる。
@@ -72,6 +80,7 @@ func New(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/billing-runs", s.handleRunBilling)
 	mux.HandleFunc("GET /api/invoices", s.handleListInvoices)
 	mux.HandleFunc("GET /api/collection-states", s.handleListCollectionStates)
+	mux.HandleFunc("GET /api/dunning-campaigns", s.handleListDunningCampaigns)
 	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
 
 	return withCORS(withRecover(mux))
@@ -277,6 +286,17 @@ func (s *server) handleListCollectionStates(w http.ResponseWriter, _ *http.Reque
 			Amount:     toMoney(inv.Amount),
 			Status:     collectionStatusFor(inv.Status, caseStatus, hasCase),
 		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleListDunningCampaigns は督促キャンペーン一覧を返す（CampaignID 昇順）。
+func (s *server) handleListDunningCampaigns(w http.ResponseWriter, _ *http.Request) {
+	views := s.deps.Dunning.ListCampaigns()
+	sort.Slice(views, func(i, j int) bool { return views[i].CampaignID < views[j].CampaignID })
+	out := make([]dunningCampaignDTO, 0, len(views))
+	for _, v := range views {
+		out = append(out, toDunningCampaignDTO(v))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

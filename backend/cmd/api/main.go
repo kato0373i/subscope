@@ -53,7 +53,7 @@ func main() {
 	cases := collection.NewService(bus)
 	_ = payment.NewService(bus)
 	_ = settlement.NewService(bus)
-	_ = dunning.NewService(bus)
+	dunningSvc := dunning.NewService(bus)
 	_ = notification.NewService(bus)
 	_ = creditnote.NewService(bus)
 
@@ -165,6 +165,7 @@ func main() {
 		Cases:     cases,
 		Members:   members,
 		Metrics:   mtr,
+		Dunning:   dunningSvc,
 	})
 
 	// STATIC_DIR が指定されていれば、ビルド済みフロントを同一オリジンで配信する。

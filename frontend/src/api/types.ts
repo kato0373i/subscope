@@ -65,6 +65,23 @@ export interface CustomerDetail {
   };
 }
 
+/** 督促キャンペーンの状態。バックエンド dunning の状態機械に対応。 */
+export type DunningStatus = "active" | "resolved" | "completed";
+
+/** 督促キャンペーンの 1 行。GET /api/dunning-campaigns に対応。 */
+export interface DunningCampaign {
+  campaignId: string;
+  invoiceId: string;
+  account: string;
+  status: DunningStatus;
+  /** 実施済みステップ数。 */
+  stepsTriggered: number;
+  /** 全ステップ数。 */
+  stepsTotal: number;
+  /** 次に発火するチャネル（email/sms/letter）。完了なら ""。 */
+  nextChannel: string;
+}
+
 // --- 操作（コマンド）系の入出力。バックエンド httpapi の REST 契約に対応。 ---
 
 /** 契約登録の入力（POST /api/contracts）。 */

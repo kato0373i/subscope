@@ -24,6 +24,35 @@ type (
 // DefaultSequence は既定の督促シーケンス（D+0 メール → D+3 SMS → D+7 督促状）。
 func DefaultSequence() []Step { return domain.DefaultSequence() }
 
+// CampaignView は督促キャンペーンの外向き読み取りビュー。
+type CampaignView struct {
+	CampaignID     shared.DunningCampaignID
+	InvoiceID      shared.InvoiceID
+	Account        shared.BillingAccountID
+	Status         string // active / resolved / completed
+	StepsTriggered int
+	StepsTotal     int
+	NextChannel    string // 次段階のチャネル（完了なら ""）
+}
+
+// ListCampaigns は進行中・終了済みを含む全督促キャンペーンを返す。
+// map 反復は順不同のため、呼び出し側で安定ソートする想定（CampaignID 昇順）。
+func (s *Service) ListCampaigns() []CampaignView {
+	out := make([]CampaignView, 0, len(s.campaigns))
+	for _, c := range s.campaigns {
+		out = append(out, CampaignView{
+			CampaignID:     c.ID,
+			InvoiceID:      c.Invoice,
+			Account:        c.Account,
+			Status:         string(c.Status),
+			StepsTriggered: c.Triggered(),
+			StepsTotal:     c.Total(),
+			NextChannel:    string(c.NextChannel()),
+		})
+	}
+	return out
+}
+
 // Service は督促キャンペーンを統括する。1 請求につき 1 キャンペーン。
 type Service struct {
 	bus       shared.EventBus

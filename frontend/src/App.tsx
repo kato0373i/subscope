@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
-import type { CollectionState, Contract } from "./api/types";
+import type { CollectionState, Contract, DunningCampaign } from "./api/types";
 import {
   collectionStatusLabel,
   collectionStatusTone,
   contractStatusLabel,
   contractStatusTone,
+  dunningChannelLabel,
+  dunningStatusLabel,
+  dunningStatusTone,
   formatMoney,
 } from "./format";
 import type { View } from "./views";
@@ -22,6 +25,7 @@ const pageMeta: Record<View, { title: string; subtitle: string }> = {
   operations: { title: "登録・操作", subtitle: "契約登録・請求実行・Billing Run" },
   contracts: { title: "契約", subtitle: "契約の一覧と状態・請求実行" },
   collections: { title: "請求・回収", subtitle: "請求書ごとの入金・回収状況" },
+  dunning: { title: "督促", subtitle: "未収に対する督促キャンペーンの進行状況" },
 };
 
 interface Toast {
@@ -34,6 +38,7 @@ function App() {
   const [view, setView] = useState<View>("dashboard");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [collections, setCollections] = useState<CollectionState[]>([]);
+  const [dunning, setDunning] = useState<DunningCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -44,12 +49,14 @@ function App() {
 
   /** 契約一覧と請求/回収状況を再取得して画面に反映する。 */
   const refresh = useCallback(async () => {
-    const [c, s] = await Promise.all([
+    const [c, s, d] = await Promise.all([
       api.listContracts(),
       api.listCollectionStates(),
+      api.listDunningCampaigns(),
     ]);
     setContracts(c);
     setCollections(s);
+    setDunning(d);
   }, []);
 
   useEffect(() => {
@@ -234,6 +241,56 @@ function App() {
                                   {busyActions.has(`bill-${c.id}`) ? "実行中…" : "請求実行"}
                                 </button>
                               </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {view === "dunning" && (
+                <section className="card">
+                  <div className="card__head">
+                    <h2 className="card__title">督促キャンペーン</h2>
+                    <span className="card__count">{dunning.length} 件</span>
+                  </div>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>キャンペーンID</th>
+                          <th>請求ID</th>
+                          <th>請求先</th>
+                          <th>状態</th>
+                          <th className="ar">進捗</th>
+                          <th>次のチャネル</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dunning.length === 0 ? (
+                          <tr className="empty-row">
+                            <td colSpan={6}>
+                              督促はありません。決済失敗・エスカレーションで起票されます。
+                            </td>
+                          </tr>
+                        ) : (
+                          dunning.map((d) => (
+                            <tr key={d.campaignId}>
+                              <td className="mono">{d.campaignId}</td>
+                              <td className="mono muted">{d.invoiceId}</td>
+                              <td className="mono muted">{d.account}</td>
+                              <td>
+                                <StatusPill
+                                  label={dunningStatusLabel(d.status)}
+                                  tone={dunningStatusTone(d.status)}
+                                />
+                              </td>
+                              <td className="ar num">
+                                {d.stepsTriggered} / {d.stepsTotal}
+                              </td>
+                              <td>{dunningChannelLabel(d.nextChannel)}</td>
                             </tr>
                           ))
                         )}

@@ -12,6 +12,7 @@ import (
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/collection"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/platform/httpapi"
 	"github.com/kato0373i/subscope/backend/internal/shared"
@@ -61,6 +62,10 @@ func (s *stubMembers) Name(id shared.MemberID) (string, bool) {
 type stubMetrics struct{ snap metrics.Snapshot }
 
 func (s *stubMetrics) Snapshot() metrics.Snapshot { return s.snap }
+
+type stubDunning struct{ views []dunning.CampaignView }
+
+func (s *stubDunning) ListCampaigns() []dunning.CampaignView { return s.views }
 
 func newTestServer(d httpapi.Deps) *httptest.Server {
 	return httptest.NewServer(httpapi.New(d))
@@ -262,6 +267,47 @@ func TestGetContract_NotFound(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestListDunningCampaigns(t *testing.T) {
+	deps := httpapi.Deps{
+		Dunning: &stubDunning{views: []dunning.CampaignView{
+			// 意図的に逆順で渡し、ハンドラが CampaignID 昇順へ整列することを確認する。
+			{CampaignID: "DUN-0002", InvoiceID: "INV-0002", Account: "BA-0002", Status: "resolved", StepsTriggered: 1, StepsTotal: 3, NextChannel: "sms"},
+			{CampaignID: "DUN-0001", InvoiceID: "INV-0001", Account: "BA-0001", Status: "active", StepsTriggered: 2, StepsTotal: 3, NextChannel: "letter"},
+		}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/dunning-campaigns")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var got []struct {
+		CampaignID     string `json:"campaignId"`
+		Status         string `json:"status"`
+		StepsTriggered int    `json:"stepsTriggered"`
+		StepsTotal     int    `json:"stepsTotal"`
+		NextChannel    string `json:"nextChannel"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].CampaignID != "DUN-0001" || got[1].CampaignID != "DUN-0002" {
+		t.Errorf("CampaignID 昇順整列されていない: %s, %s", got[0].CampaignID, got[1].CampaignID)
+	}
+	if got[0].Status != "active" || got[0].StepsTriggered != 2 || got[0].StepsTotal != 3 || got[0].NextChannel != "letter" {
+		t.Errorf("DUN-0001 の写像が想定外: %+v", got[0])
 	}
 }
 

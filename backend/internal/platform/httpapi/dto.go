@@ -6,6 +6,7 @@ package httpapi
 import (
 	"github.com/kato0373i/subscope/backend/internal/billing"
 	"github.com/kato0373i/subscope/backend/internal/contract"
+	"github.com/kato0373i/subscope/backend/internal/dunning"
 	"github.com/kato0373i/subscope/backend/internal/metrics"
 	"github.com/kato0373i/subscope/backend/internal/shared"
 )
@@ -70,6 +71,29 @@ type customerSummaryDTO struct {
 	Paid         moneyDTO `json:"paid"`         // collectionStatus == "paid" の合計
 	Outstanding  moneyDTO `json:"outstanding"`  // paid 以外の合計（債権残）
 	InCollection int      `json:"inCollection"` // collectionStatus == "in_collection" の件数
+}
+
+// dunningCampaignDTO は frontend types.ts の DunningCampaign に対応。
+type dunningCampaignDTO struct {
+	CampaignID     string `json:"campaignId"`
+	InvoiceID      string `json:"invoiceId"`
+	Account        string `json:"account"`
+	Status         string `json:"status"` // active / resolved / completed
+	StepsTriggered int    `json:"stepsTriggered"`
+	StepsTotal     int    `json:"stepsTotal"`
+	NextChannel    string `json:"nextChannel"` // 完了なら ""
+}
+
+func toDunningCampaignDTO(v dunning.CampaignView) dunningCampaignDTO {
+	return dunningCampaignDTO{
+		CampaignID:     string(v.CampaignID),
+		InvoiceID:      string(v.InvoiceID),
+		Account:        string(v.Account),
+		Status:         v.Status,
+		StepsTriggered: v.StepsTriggered,
+		StepsTotal:     v.StepsTotal,
+		NextChannel:    v.NextChannel,
+	}
 }
 
 // metricsDTO は metrics.Snapshot の外向き表現。

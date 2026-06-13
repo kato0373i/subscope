@@ -54,3 +54,31 @@ export const collectionStatusLabel = (status: string): string =>
 
 export const collectionStatusTone = (status: string): Tone =>
   collectionStatusTones[status] ?? "neutral";
+
+const dunningStatusLabels: Record<string, string> = {
+  active: "督促中",
+  resolved: "入金解決",
+  completed: "全段階実施",
+};
+
+const dunningStatusTones: Record<string, Tone> = {
+  active: "critical",
+  resolved: "positive",
+  completed: "neutral",
+};
+
+const dunningChannelLabels: Record<string, string> = {
+  email: "メール",
+  sms: "SMS",
+  letter: "督促状",
+};
+
+export const dunningStatusLabel = (status: string): string =>
+  dunningStatusLabels[status] ?? status;
+
+export const dunningStatusTone = (status: string): Tone =>
+  dunningStatusTones[status] ?? "neutral";
+
+/** 督促チャネルの日本語ラベル。空文字（完了）は「—」。 */
+export const dunningChannelLabel = (channel: string): string =>
+  channel === "" ? "—" : (dunningChannelLabels[channel] ?? channel);

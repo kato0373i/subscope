@@ -38,6 +38,49 @@ func TestService_PaymentSucceededSettlesInvoice(t *testing.T) {
 	}
 }
 
+// 決済が発行より先に届く順序（同期バスで collection が InvoiceIssued 配信中に決済まで誘発する
+// 実デモの順序）でも、支払済み請求を未消込（outstanding）に積まない。回帰テスト。
+func TestService_PaymentBeforeIssue_NotLeftOutstanding(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	svc := settlement.NewService(bus)
+
+	// 先に決済（全額入金）が届く。
+	mustPublish(t, bus, events.PaymentSucceeded{
+		InvoiceID:     "INV-1",
+		TransactionID: "TXN-1",
+		Amount:        shared.JPY(3000),
+	})
+	// その後に発行（請求先 ID 投影）が後着する。
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+
+	if got := svc.ListOutstanding(); len(got) != 0 {
+		t.Fatalf("支払済み請求が未消込に残った: %+v", got)
+	}
+	if got := svc.ListSettlements(); len(got) != 1 || !got[0].FullyApplied {
+		t.Fatalf("消込実績が想定外: %+v", got)
+	}
+}
+
+// 部分入金が発行より先に届いた場合、純未消込（発行額−既消込）だけを投影する。
+func TestService_PartialPaymentBeforeIssue_ProjectsNetOutstanding(t *testing.T) {
+	bus := eventbus.NewInMemory()
+	svc := settlement.NewService(bus)
+
+	// 部分入金（2000）が先に届く。投影が無いため全額充当扱いだが、累計は 2000 を記録する。
+	mustPublish(t, bus, events.PaymentSucceeded{
+		InvoiceID:     "INV-1",
+		TransactionID: "TXN-1",
+		Amount:        shared.JPY(2000),
+	})
+	// 発行（3000）が後着 → 純未消込 1000 を投影する。
+	mustPublish(t, bus, events.InvoiceIssued{InvoiceID: "INV-1", BillingAccountID: "BA-1", Amount: shared.JPY(3000)})
+
+	got := svc.ListOutstanding()
+	if len(got) != 1 || got[0].Outstanding.Amount != 1000 {
+		t.Fatalf("純未消込の投影が想定外: %+v", got)
+	}
+}
+
 // 同一の入金（同じ TransactionID）が二重通知されても、消込は一度だけ・InvoicePaid も一度だけ。
 func TestService_SettlementIsIdempotent(t *testing.T) {
 	bus := eventbus.NewInMemory()

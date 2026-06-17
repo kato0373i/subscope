@@ -54,7 +54,8 @@ function App() {
     const [c, s, d] = await Promise.all([
       api.listContracts(),
       api.listCollectionStates(),
-      api.listDunningCampaigns(),
+      // 督促だけの障害で全画面を止めないよう段階的に劣化させる（契約/回収は表示を維持）。
+      api.listDunningCampaigns().catch(() => []),
     ]);
     setContracts(c);
     setCollections(s);
@@ -217,13 +218,17 @@ function App() {
                           </tr>
                         ) : (
                           contracts.map((c) => (
-                            <tr
-                              key={c.id}
-                              className="row--clickable"
-                              onClick={() => setDetailContractId(c.id)}
-                              title="クリックで顧客個票を開く"
-                            >
-                              <td className="mono">{c.id}</td>
+                            <tr key={c.id}>
+                              <td className="mono">
+                                <button
+                                  type="button"
+                                  className="link-btn"
+                                  onClick={() => setDetailContractId(c.id)}
+                                  title="顧客個票を開く"
+                                >
+                                  {c.id}
+                                </button>
+                              </td>
                               <td className="strong">{c.memberName}</td>
                               <td className="mono muted">{c.billingAccountId}</td>
                               <td className="ar num">{formatMoney(c.monthlyFee)}</td>
@@ -238,11 +243,7 @@ function App() {
                                   type="button"
                                   className="btn btn--sm btn--ghost"
                                   disabled={busyActions.has(`bill-${c.id}`)}
-                                  onClick={(e) => {
-                                    // 行クリック（個票オープン）と二重発火させない。
-                                    e.stopPropagation();
-                                    triggerBilling(c.id);
-                                  }}
+                                  onClick={() => triggerBilling(c.id)}
                                 >
                                   {busyActions.has(`bill-${c.id}`) ? "実行中…" : "請求実行"}
                                 </button>

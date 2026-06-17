@@ -69,11 +69,12 @@ type stubDunning struct{ views []dunning.CampaignView }
 func (s *stubDunning) ListCampaigns() []dunning.CampaignView { return s.views }
 
 type stubSettlement struct {
-	settlements []settlement.SettlementView
-	outstanding []settlement.OutstandingView
-	imported    []settlement.DepositInput
-	reconciled  []shared.InvoiceID
-	reconcErr   error
+	settlements    []settlement.SettlementView
+	outstanding    []settlement.OutstandingView
+	imported       []settlement.DepositInput
+	reconciled     []shared.InvoiceID
+	reconciledAmts []shared.Money
+	reconcErr      error
 }
 
 func (s *stubSettlement) ListSettlements() []settlement.SettlementView  { return s.settlements }
@@ -82,11 +83,12 @@ func (s *stubSettlement) ImportBankDeposits(_ context.Context, inputs []settleme
 	s.imported = append(s.imported, inputs...)
 	return nil
 }
-func (s *stubSettlement) ReconcileManually(_ context.Context, invoice shared.InvoiceID, _ shared.Money) error {
+func (s *stubSettlement) ReconcileManually(_ context.Context, invoice shared.InvoiceID, amount shared.Money) error {
 	if s.reconcErr != nil {
 		return s.reconcErr
 	}
 	s.reconciled = append(s.reconciled, invoice)
+	s.reconciledAmts = append(s.reconciledAmts, amount)
 	return nil
 }
 
@@ -364,6 +366,39 @@ func TestListSettlements_Sorted(t *testing.T) {
 	}
 }
 
+func TestListOutstanding_Sorted(t *testing.T) {
+	deps := httpapi.Deps{
+		Settlement: &stubSettlement{outstanding: []settlement.OutstandingView{
+			{InvoiceID: "INV-0002", Account: "BA-0002", PayerName: "佐藤", Outstanding: shared.JPY(5000)},
+			{InvoiceID: "INV-0001", Account: "BA-0001", PayerName: "山田", Outstanding: shared.JPY(3000)},
+		}},
+	}
+	srv := newTestServer(deps)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/settlements/outstanding")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	var got []struct {
+		InvoiceID   string `json:"invoiceId"`
+		PayerName   string `json:"payerName"`
+		Outstanding struct {
+			Amount int64 `json:"amount"`
+		} `json:"outstanding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 || got[0].InvoiceID != "INV-0001" || got[1].InvoiceID != "INV-0002" {
+		t.Fatalf("InvoiceID 昇順整列されていない: %+v", got)
+	}
+	if got[0].Outstanding.Amount != 3000 || got[0].PayerName != "山田" {
+		t.Errorf("outstanding 写像が想定外: %+v", got[0])
+	}
+}
+
 func TestReconcileManually_Success(t *testing.T) {
 	ss := &stubSettlement{}
 	srv := newTestServer(httpapi.Deps{Settlement: ss})
@@ -380,6 +415,29 @@ func TestReconcileManually_Success(t *testing.T) {
 	}
 	if len(ss.reconciled) != 1 || ss.reconciled[0] != "INV-0001" {
 		t.Errorf("reconciled = %v, want [INV-0001]", ss.reconciled)
+	}
+	// 金額・通貨補完が崩れていないことも検証する。
+	if len(ss.reconciledAmts) != 1 || ss.reconciledAmts[0] != shared.JPY(3000) {
+		t.Errorf("reconciledAmts = %v, want [3000 JPY]", ss.reconciledAmts)
+	}
+}
+
+func TestReconcileManually_RejectsNonPositive(t *testing.T) {
+	ss := &stubSettlement{}
+	srv := newTestServer(httpapi.Deps{Settlement: ss})
+	defer srv.Close()
+
+	body := `{"invoiceId":"INV-0001","amount":{"amount":0,"currency":"JPY"}}`
+	resp, err := http.Post(srv.URL+"/api/settlements/manual", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	if len(ss.reconciled) != 0 {
+		t.Errorf("0 円消込が Service まで到達した: %v", ss.reconciled)
 	}
 }
 

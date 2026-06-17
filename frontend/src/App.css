@@ -582,12 +582,23 @@
   padding: 22px;
 }
 
-/* ===== クリック可能な行（顧客個票を開く） ===== */
-.row--clickable {
+/* ===== リンク風ボタン（顧客個票を開く・キーボード操作可） ===== */
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--blurple);
   cursor: pointer;
+  text-decoration: none;
 }
-.row--clickable:hover {
-  background: var(--bg);
+.link-btn:hover {
+  text-decoration: underline;
+}
+.link-btn:focus-visible {
+  outline: 2px solid var(--blurple);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 /* ===== 顧客個票ドロワー ===== */

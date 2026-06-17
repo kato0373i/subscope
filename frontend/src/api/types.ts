@@ -40,12 +40,18 @@ export interface CollectionState {
   status: CollectionStatus;
 }
 
+/** billing 由来の請求書ステータス。 */
+export type InvoiceStatus = "issued" | "paid";
+
+/** 督促チャネル。完了・停止時は空文字。 */
+export type DunningChannel = "email" | "sms" | "letter" | "";
+
 /** 請求書 1 行 + 回収ステータス（顧客個票用）。GET /api/contracts/{id} の invoices[]。 */
 export interface InvoiceCollectionRow {
   invoiceId: string;
   amount: Money;
   /** billing 由来の生ステータス（issued / paid …）。 */
-  invoiceStatus: string;
+  invoiceStatus: InvoiceStatus;
   /** billing×collection を合成した画面用ステータス。 */
   collectionStatus: CollectionStatus;
 }
@@ -79,7 +85,7 @@ export interface DunningCampaign {
   /** 全ステップ数。 */
   stepsTotal: number;
   /** 次に発火するチャネル（email/sms/letter）。完了なら ""。 */
-  nextChannel: string;
+  nextChannel: DunningChannel;
 }
 
 /** 消込実績の 1 行。GET /api/settlements に対応。 */

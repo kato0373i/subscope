@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/kato0373i/subscope/backend/internal/settlement/internal/domain"
 	"github.com/kato0373i/subscope/backend/internal/shared"
@@ -54,6 +55,12 @@ type PayerNameResolver func(shared.BillingAccountID) string
 
 // Service は入金事実を債権へ適用し、消込の進捗をイベントで通知する。
 type Service struct {
+	// mu は全 map（settlements/deposits/outstanding/applied/seen/seenRefs）と採番を保護する。
+	// HTTP の読み取り（ListSettlements/ListOutstanding）とイベント処理（書き込み）が別ゴルーチンで
+	// 競合しても concurrent map access で panic しないようにする。ロックはエントリーポイント
+	//（onInvoiceIssued/onPaymentSucceeded/ImportBankDeposits/ReconcileManually と list 2 つ）で取り、
+	// 内部 helper（applyToInvoice/recordApplied）はロック保持下で呼ぶ前提（再ロックしない）。
+	mu          sync.RWMutex
 	bus         shared.EventBus
 	settlements map[shared.SettlementID]*domain.Settlement
 	deposits    map[shared.SettlementID]*domain.BankDeposit
@@ -100,6 +107,8 @@ func NewServiceWithPayerNames(bus shared.EventBus, resolver PayerNameResolver) *
 
 func (s *Service) onInvoiceIssued(_ context.Context, e shared.Event) error {
 	ev := e.(events.InvoiceIssued)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// 純未消込＝発行額−既消込累計。発行が決済より後着した場合（同期バスで collection が
 	// InvoiceIssued 配信中に決済まで誘発する順序）でも、支払済み請求を未消込に積まない。
@@ -126,6 +135,8 @@ func (s *Service) onInvoiceIssued(_ context.Context, e shared.Event) error {
 
 func (s *Service) onPaymentSucceeded(ctx context.Context, e shared.Event) error {
 	ev := e.(events.PaymentSucceeded)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// 冪等性：同一の入金（PSP の二重通知）は一度だけ消し込む。TransactionID を自然キーにする。
 	if s.seen[ev.TransactionID] {
@@ -160,6 +171,8 @@ func (s *Service) onPaymentSucceeded(ctx context.Context, e shared.Event) error 
 // 各入金を未消込請求へ自動照合（請求先 ID／名義 ＋ 金額）して消し込み、
 // 自動照合できなかった入金は UnmatchedDepositDetected を発行して手動消込へ回す。
 func (s *Service) ImportBankDeposits(ctx context.Context, inputs []DepositInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, in := range inputs {
 		if in.Reference != "" && s.seenRefs[in.Reference] {
 			log.Printf("[settlement] 重複入金を無視 ref=%s（冪等）", in.Reference)
@@ -208,6 +221,8 @@ func (s *Service) ImportBankDeposits(ctx context.Context, inputs []DepositInput)
 // ReconcileManually はオペレータによる手動消込。自動照合できなかった入金を、
 // 担当者が請求を指定して充当する経路（自動／手動ハイブリッドの手動側）。
 func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	c, ok := s.outstanding[invoice]
 	if !ok {
 		return fmt.Errorf("%w invoice=%s", ErrNotOutstanding, invoice)
@@ -225,6 +240,8 @@ func (s *Service) ReconcileManually(ctx context.Context, invoice shared.InvoiceI
 // ListSettlements は消込実績の一覧を返す。
 // map 反復は順不同のため、呼び出し側で安定ソートする想定（SettlementID 昇順）。
 func (s *Service) ListSettlements() []SettlementView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]SettlementView, 0, len(s.settlements))
 	for _, st := range s.settlements {
 		out = append(out, SettlementView{
@@ -241,6 +258,8 @@ func (s *Service) ListSettlements() []SettlementView {
 // ListOutstanding は未消込の請求（消込候補）の一覧を返す。
 // 呼び出し側で安定ソートする想定（InvoiceID 昇順）。
 func (s *Service) ListOutstanding() []OutstandingView {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]OutstandingView, 0, len(s.outstanding))
 	for _, c := range s.outstanding {
 		out = append(out, OutstandingView{
@@ -253,21 +272,29 @@ func (s *Service) ListOutstanding() []OutstandingView {
 	return out
 }
 
-// recordApplied は請求ごとの消込累計を加算する。初項はその通貨を採用する。
-func (s *Service) recordApplied(invoice shared.InvoiceID, amount shared.Money) {
+// recordApplied は請求ごとの消込累計を加算する。初項はその通貨を採用し、
+// 以降は Money.Add で加算する（通貨不一致・オーバーフローはエラーとして伝播する）。
+func (s *Service) recordApplied(invoice shared.InvoiceID, amount shared.Money) error {
 	cur, ok := s.applied[invoice]
-	if !ok || cur.Currency != amount.Currency {
+	if !ok {
 		s.applied[invoice] = amount
-		return
+		return nil
 	}
-	s.applied[invoice] = shared.Money{Amount: cur.Amount + amount.Amount, Currency: cur.Currency}
+	sum, err := cur.Add(amount)
+	if err != nil {
+		return err
+	}
+	s.applied[invoice] = sum
+	return nil
 }
 
 // applyToInvoice は請求の残額を減らし、全額充当なら InvoicePaid、一部なら InvoicePartiallyPaid を発行する。
 func (s *Service) applyToInvoice(ctx context.Context, invoice shared.InvoiceID, amount shared.Money) error {
 	// 消込累計を記録する。発行が決済より後着しても純未消込を正しく投影するため
 	// （outstanding の有無に関わらず累計する）。
-	s.recordApplied(invoice, amount)
+	if err := s.recordApplied(invoice, amount); err != nil {
+		return err
+	}
 
 	c, ok := s.outstanding[invoice]
 	if !ok {

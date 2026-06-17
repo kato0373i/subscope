@@ -44,7 +44,7 @@
 
 ### 3.1 エンドポイント
 
-```
+```text
 GET /api/contracts/{id}
 ```
 

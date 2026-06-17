@@ -147,9 +147,11 @@ func (s *server) handleGetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// この契約の請求書を束ね、各行の回収ステータスとサマリを合成する。
-	// 金額集計は通貨未設定のゼロから始め、初項で通貨を採用する（addMoneyDTO）。
+	// 金額集計は shared.Money + Money.Add で行い、通貨不一致は黙殺せずエラー化する
+	//（CLAUDE.md: 加算は Money.Add）。通貨未設定のゼロは初項で通貨を採用する。
 	rows := make([]invoiceCollectionRow, 0)
-	summary := customerSummaryDTO{}
+	var paid, outstanding shared.Money
+	invoiceCount, inCollection := 0, 0
 	for _, inv := range s.deps.Invoices.ListInvoices() {
 		if inv.ContractID != cid {
 			continue
@@ -162,44 +164,53 @@ func (s *server) handleGetContract(w http.ResponseWriter, r *http.Request) {
 			InvoiceStatus:    inv.Status,
 			CollectionStatus: colStatus,
 		})
-		summary.InvoiceCount++
-		switch colStatus {
-		case "paid":
-			summary.Paid = addMoneyDTO(summary.Paid, inv.Amount)
-		case "in_collection":
-			summary.InCollection++
-			summary.Outstanding = addMoneyDTO(summary.Outstanding, inv.Amount)
-		default:
-			summary.Outstanding = addMoneyDTO(summary.Outstanding, inv.Amount)
+		invoiceCount++
+
+		var acc *shared.Money
+		if colStatus == "paid" {
+			acc = &paid
+		} else {
+			acc = &outstanding
+			if colStatus == "in_collection" {
+				inCollection++
+			}
 		}
+		sum, err := addMoney(*acc, inv.Amount)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_mismatch", err.Error())
+			return
+		}
+		*acc = sum
 	}
 
 	// 請求が無く通貨が未確定なら契約の月額通貨でゼロ表示にする。
-	if summary.Paid.Currency == "" {
-		summary.Paid.Currency = view.MonthlyFee.Currency
+	if paid.Currency == "" {
+		paid.Currency = view.MonthlyFee.Currency
 	}
-	if summary.Outstanding.Currency == "" {
-		summary.Outstanding.Currency = view.MonthlyFee.Currency
+	if outstanding.Currency == "" {
+		outstanding.Currency = view.MonthlyFee.Currency
 	}
 
 	writeJSON(w, http.StatusOK, customerDetailDTO{
 		Contract: toContractDTO(view, name),
 		Invoices: rows,
-		Summary:  summary,
+		Summary: customerSummaryDTO{
+			InvoiceCount: invoiceCount,
+			Paid:         toMoney(paid),
+			Outstanding:  toMoney(outstanding),
+			InCollection: inCollection,
+		},
 	})
 }
 
-// addMoneyDTO は集計用に moneyDTO へ shared.Money を加算する。
-// acc の通貨が未設定なら m の通貨を採用し（ゼロ初期値の初項を許容）、
-// 通貨不一致は加算せず据え置く（単一契約内は同一通貨の前提）。
-func addMoneyDTO(acc moneyDTO, m shared.Money) moneyDTO {
+// addMoney は集計用に shared.Money を加算する。acc の通貨が未設定なら m の通貨を
+// 採用し（ゼロ初期値の初項を許容）、それ以外は Money.Add に委ねる（通貨不一致・
+// オーバーフローはエラーとして返す）。
+func addMoney(acc, m shared.Money) (shared.Money, error) {
 	if acc.Currency == "" {
-		return moneyDTO{Amount: m.Amount, Currency: m.Currency}
+		return m, nil
 	}
-	if acc.Currency != m.Currency {
-		return acc
-	}
-	return moneyDTO{Amount: acc.Amount + m.Amount, Currency: acc.Currency}
+	return acc.Add(m)
 }
 
 func (s *server) handleRegisterContract(w http.ResponseWriter, r *http.Request) {
@@ -373,6 +384,11 @@ func (s *server) handleReconcileManually(w http.ResponseWriter, r *http.Request)
 	}
 	if req.InvoiceID == "" {
 		writeError(w, http.StatusBadRequest, "missing_field", "invoiceId は必須です")
+		return
+	}
+	if req.Amount.Amount <= 0 {
+		// 0 円・負数の消込は未消込残高を不正に増やしうるため弾く（債権を壊さない）。
+		writeError(w, http.StatusBadRequest, "invalid_amount", "amount は 1 以上で指定してください")
 		return
 	}
 	currency := req.Amount.Currency

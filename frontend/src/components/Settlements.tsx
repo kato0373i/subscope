@@ -6,6 +6,13 @@ import { StatusPill } from "./StatusPill";
 
 type Notify = (message: string, kind: "success" | "error") => void;
 
+/** 数値入力を 0 以上の整数に正規化する（空/途中編集で NaN・負数を state へ入れない）。 */
+const toPositiveInt = (raw: string): number => {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.trunc(n));
+};
+
 interface Props {
   api: SubscopeApi;
   notify: Notify;
@@ -158,7 +165,16 @@ function OutstandingRow({
   const [amount, setAmount] = useState(row.outstanding.amount);
   const [busy, setBusy] = useState(false);
 
+  // 再取得で同一 invoiceId の行が残り key 再利用されたとき、入力を最新の残額へ同期する。
+  useEffect(() => {
+    setAmount(row.outstanding.amount);
+  }, [row.invoiceId, row.outstanding.amount]);
+
   const reconcile = async () => {
+    if (!Number.isInteger(amount) || amount <= 0) {
+      notify("充当額は 1 以上の整数で入力してください", "error");
+      return;
+    }
     setBusy(true);
     try {
       await api.reconcileManually({
@@ -188,7 +204,7 @@ function OutstandingRow({
             min={1}
             step={1}
             value={amount}
-            onChange={(e) => setAmount(Math.trunc(Number(e.target.value)))}
+            onChange={(e) => setAmount(toPositiveInt(e.target.value))}
             aria-label="充当額（円）"
           />
           <button
@@ -224,6 +240,10 @@ function DepositImportForm({
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setError("入金額は 1 以上の整数で入力してください");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -292,7 +312,7 @@ function DepositImportForm({
                 min={1}
                 step={1}
                 value={amount}
-                onChange={(e) => setAmount(Math.trunc(Number(e.target.value)))}
+                onChange={(e) => setAmount(toPositiveInt(e.target.value))}
               />
             </label>
           </div>

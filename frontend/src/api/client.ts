@@ -212,7 +212,8 @@ export class MockApi implements SubscopeApi {
     for (const s of states) {
       if (s.status === "paid") {
         paid += s.amount.amount;
-      } else {
+      } else if (s.status !== "written_off") {
+        // 貸倒(written_off)は債権残に含めない（バックエンドの集計と整合）。
         outstanding += s.amount.amount;
         if (s.status === "in_collection") inCollection += 1;
       }

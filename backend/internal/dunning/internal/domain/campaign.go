@@ -96,3 +96,16 @@ func (c *Campaign) BackfillAccount(account shared.BillingAccountID) bool {
 
 // Triggered は実施済みステップ数。
 func (c *Campaign) Triggered() int { return c.triggered }
+
+// Total はシーケンスの全ステップ数。
+func (c *Campaign) Total() int { return len(c.steps) }
+
+// NextChannel は次に発火するチャネルを返す。
+// 進行中(active)でない（入金解決・全実施済み）場合や全ステップ実施済みの場合は ""。
+// 解決済みキャンペーンが「まだ次の督促がある」ように見えるのを防ぐ。
+func (c *Campaign) NextChannel() Channel {
+	if c.Status != StatusActive || c.triggered >= len(c.steps) {
+		return ""
+	}
+	return c.steps[c.triggered].Channel
+}
